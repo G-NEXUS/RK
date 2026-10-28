@@ -57,10 +57,15 @@
         </div>
     </footer>
 
-    <script src="common.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="common.js?v=2"></script>
     <script>
         const app = document.getElementById('app');
         const brand = 'RK General Dealers';
+        let lastAdminTab = 'overview';
+        let lastDashboardTab = 'profile';
         const currency = new Intl.NumberFormat('en-ZM', { maximumFractionDigits: 2 });
 
         function formatMoney(value) {
@@ -146,7 +151,7 @@
         }
 
         function renderHome() {
-            const products = JSON.parse(localStorage.getItem('products')) || [];
+            const products = getProducts();
             app.innerHTML = `<header class="hero">
                 <div class="hero-content">
                     <p class="eyebrow">Good finds. Everyday value.</p>
@@ -168,7 +173,7 @@
         function renderSearch() {
             const query = routeInfo().params.get('q') || '';
             const normalizedQuery = query.toLowerCase();
-            const products = JSON.parse(localStorage.getItem('products')) || [];
+            const products = getProducts();
             const matches = products.filter(product => [product.name, product.category, product.description]
                 .some(value => String(value || '').toLowerCase().includes(normalizedQuery)));
             app.innerHTML = `<h1 class="section-title mt-20">Search results for "${escapeHtml(query)}"</h1>
@@ -178,7 +183,7 @@
 
         function renderProduct() {
             const id = routeInfo().params.get('id');
-            const products = JSON.parse(localStorage.getItem('products')) || [];
+            const products = getProducts();
             const product = products.find(item => String(item.id) === id);
             if (!product) {
                 app.innerHTML = '<div class="empty-state"><h1>Product not found.</h1><a class="btn mt-20" href="#/home">Back to shop</a></div>';
@@ -204,11 +209,6 @@
 
         function renderLogin() {
             app.innerHTML = authForm(`<h1 class="text-center mb-20">Welcome Back</h1>
-                <aside class="demo-accounts" aria-label="Demo account credentials">
-                    <h2>Demo Accounts</h2>
-                    <p><strong>Customer</strong><br>Email: <code>customer@rk.com</code><br>Password: <code>customer123</code></p>
-                    <p><strong>Admin</strong><br>Email: <code>admin@rk.com</code><br>Password: <code>admin123</code></p>
-                </aside>
                 <form onsubmit="handleLogin(event)">
                     <div class="form-group"><label for="login-email">Email Address</label><input type="email" id="login-email" autocomplete="email" required></div>
                     ${passwordField('login-password', 'Password')}
@@ -305,7 +305,7 @@
 
         function renderOrderSuccess() {
             const orderId = routeInfo().params.get('id') || '';
-            const order = (JSON.parse(localStorage.getItem('allOrders')) || []).find(item => item.id === orderId);
+            const order = getOrderById(orderId);
             const whatsappUrl = order ? `https://wa.me/260768201389?text=${encodeURIComponent(formatOrderMessage(order))}` : '';
             app.innerHTML = `<div class="text-center empty-state"><div class="success-mark" aria-hidden="true">✓</div><h1>Order Confirmed!</h1>
                 <p class="mb-20">Thank you for your purchase. Your order <strong>${escapeHtml(orderId)}</strong> is being processed.</p><p>Your order details are saved in the admin dashboard.</p>
@@ -352,12 +352,13 @@
         }
 
         function renderDashboard(tab = 'profile') {
-            const user = JSON.parse(localStorage.getItem('currentUser'));
+            lastDashboardTab = tab;
+            const user = getCurrentUser();
             if (!user) {
                 location.hash = '#/login';
                 return;
             }
-            const orders = JSON.parse(localStorage.getItem(`orders_${user.email}`)) || [];
+            const orders = getMyOrders();
             let content = '';
             if (tab === 'orders') {
                 content = `<h2 class="mb-20">Order History</h2>${orders.length ? [...orders].reverse().map(order => `<article class="order-card"><div class="order-header"><div><strong>Order ${escapeHtml(order.id)}</strong><p>Placed on ${escapeHtml(order.date)}</p></div><span class="status-badge">${escapeHtml(order.status)}</span></div><div class="summary-row"><span>${order.items.length} items</span><strong class="text-accent">${formatMoney(order.total)}</strong></div></article>`).join('') : '<p>No orders found.</p>'}`;
@@ -374,14 +375,15 @@
         }
 
         function renderAdmin(tab = 'overview') {
-            const user = JSON.parse(localStorage.getItem('currentUser'));
+            lastAdminTab = tab;
+            const user = getCurrentUser();
             if (!user?.isAdmin) {
                 location.hash = '#/login';
                 return;
             }
-            const products = JSON.parse(localStorage.getItem('products')) || [];
+            const products = getProducts();
             const categories = getCategories(products);
-            const orders = JSON.parse(localStorage.getItem('allOrders')) || [];
+            const orders = getAllOrders();
             let content;
             if (tab === 'overview') {
                 const sales = orders.reduce((sum, order) => sum + Number(order.total), 0);
@@ -430,7 +432,7 @@
             const { page } = routeInfo();
             toggleMenu(true);
             document.title = `${page === 'home' ? 'Shop' : page.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase())} | ${brand}`;
-            const user = JSON.parse(localStorage.getItem('currentUser'));
+            const user = getCurrentUser();
             document.getElementById('auth-links').innerHTML = user
                 ? `<a href="#/dashboard">Profile</a> ${user.isAdmin ? '<a href="#/admin">Admin</a>' : ''} <a href="#/home" onclick="logout()">Logout</a>`
                 : '<a href="#/login">Login</a> <a href="#/register">Register</a>';
@@ -478,7 +480,7 @@
         }
 
         function orderProductViaWhatsApp(productId) {
-            const products = JSON.parse(localStorage.getItem('products')) || [];
+            const products = getProducts();
             const product = products.find(item => Number(item.id) === Number(productId));
             if (!product) {
                 alert('This product is no longer available.');
@@ -526,49 +528,72 @@
             renderCart();
         }
 
-        function handleLogin(event) {
-            event.preventDefault();
-            const email = document.getElementById('login-email').value.trim().toLowerCase();
-            const password = document.getElementById('login-password').value;
-            const demoAccounts = [
-                { name: 'Demo Customer', email: 'customer@rk.com', password: 'customer123', isAdmin: false },
-                { name: 'Demo Admin', email: 'admin@rk.com', password: 'admin123', isAdmin: true }
-            ];
-            const demoAccount = demoAccounts.find(account => account.email === email && account.password === password);
-            if (demoAccount) {
-                const { password: _password, ...user } = demoAccount;
-                localStorage.setItem('currentUser', JSON.stringify(user));
-                location.hash = user.isAdmin ? '#/admin' : '#/dashboard';
-                return;
-            }
-            const users = JSON.parse(localStorage.getItem('users')) || [];
-            const user = users.find(account => account.email.toLowerCase() === email && account.password === password);
-            if (user) {
-                localStorage.setItem('currentUser', JSON.stringify(user));
-                location.hash = user.isAdmin ? '#/admin' : '#/dashboard';
-            } else {
-                alert('Invalid email or password.');
+        function authErrorMessage(error) {
+            switch (error?.code) {
+                case 'auth/invalid-credential':
+                case 'auth/wrong-password':
+                case 'auth/user-not-found':
+                case 'auth/invalid-email':
+                    return 'Invalid email or password.';
+                case 'auth/email-already-in-use':
+                    return 'Email already registered.';
+                case 'auth/weak-password':
+                    return 'Password must be at least 6 characters.';
+                case 'auth/too-many-requests':
+                    return 'Too many attempts. Please try again later.';
+                case 'auth/network-request-failed':
+                    return 'Network error. Check your connection and try again.';
+                default:
+                    return 'Something went wrong. Please try again.';
             }
         }
 
-        function handleRegister(event) {
+        async function handleLogin(event) {
+            event.preventDefault();
+            const email = document.getElementById('login-email').value.trim().toLowerCase();
+            const password = document.getElementById('login-password').value;
+            try {
+                const credential = await auth.signInWithEmailAndPassword(email, password);
+                const user = await waitForUser(credential.user.uid);
+                location.hash = user?.isAdmin ? '#/admin' : '#/dashboard';
+            } catch (error) {
+                console.error(error);
+                alert(authErrorMessage(error));
+            }
+        }
+
+        async function handleRegister(event) {
             event.preventDefault();
             const name = document.getElementById('reg-name').value.trim();
             const email = document.getElementById('reg-email').value.trim();
             const password = document.getElementById('reg-password').value;
-            const users = JSON.parse(localStorage.getItem('users')) || [];
-            if (users.some(user => user.email.toLowerCase() === email.toLowerCase())) {
-                alert('Email already registered.');
-                return;
+            registering = true;
+            try {
+                const credential = await auth.createUserWithEmailAndPassword(email, password);
+                await db.collection('users').doc(credential.user.uid).set({ name, email, isAdmin: false });
+                await auth.signOut();
+                alert('Registration successful! Please login.');
+                location.hash = '#/login';
+            } catch (error) {
+                console.error(error);
+                alert(authErrorMessage(error));
+            } finally {
+                registering = false;
             }
-            users.push({ name, email, password, isAdmin: false });
-            localStorage.setItem('users', JSON.stringify(users));
-            alert('Registration successful! Please login.');
-            location.hash = '#/login';
         }
 
-        function handlePasswordReset(event) {
+        async function handlePasswordReset(event) {
             event.preventDefault();
+            const email = document.getElementById('reset-email').value.trim();
+            try {
+                await auth.sendPasswordResetEmail(email);
+            } catch (error) {
+                console.error(error);
+                if (error.code === 'auth/network-request-failed') {
+                    alert(authErrorMessage(error));
+                    return;
+                }
+            }
             alert('If an account exists for this email, a reset link has been sent.');
             location.hash = '#/login';
         }
@@ -579,35 +604,51 @@
             location.hash = '#/home';
         }
 
-        function processOrder() {
+        let processingOrder = false;
+
+        async function processOrder() {
+            if (processingOrder) return;
             const cart = getCart();
             if (!cart.length) {
                 location.hash = '#/cart';
                 return;
             }
-            const user = JSON.parse(localStorage.getItem('currentUser'));
+            processingOrder = true;
+            const user = getCurrentUser();
             const order = {
                 id: `ORD-${Date.now()}`,
                 date: new Date().toLocaleDateString(),
-                items: cart,
+                // Photos are left out so the order stays small; everything shown in orders is kept.
+                items: cart.map(item => ({
+                    id: Number(item.id),
+                    name: String(item.name),
+                    price: Number(item.price),
+                    quantity: Number(item.quantity),
+                    options: item.options || {}
+                })),
                 total: cart.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0),
                 status: 'Awaiting WhatsApp confirmation',
                 customer: user?.name || 'WhatsApp customer',
                 email: user?.email || '',
                 address: '',
                 city: '',
-                zip: ''
+                zip: '',
+                uid: user?.uid || null,
+                createdAtMs: Date.now()
             };
-            const allOrders = JSON.parse(localStorage.getItem('allOrders')) || [];
-            allOrders.push(order);
-            localStorage.setItem('allOrders', JSON.stringify(allOrders));
-            if (user) {
-                const userOrders = JSON.parse(localStorage.getItem(`orders_${user.email}`)) || [];
-                userOrders.push(order);
-                localStorage.setItem(`orders_${user.email}`, JSON.stringify(userOrders));
+            try {
+                await Promise.race([
+                    db.collection('orders').doc(order.id).set(order),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Saving the order timed out.')), 8000))
+                ]);
+            } catch (error) {
+                // Never block the sale: the WhatsApp message still carries the full order.
+                console.error('Order could not be saved to the database:', error);
             }
+            rememberOrder(order);
             const whatsappUrl = `https://wa.me/260768201389?text=${encodeURIComponent(formatCartWhatsAppMessage(order))}`;
             localStorage.removeItem('cart');
+            processingOrder = false;
             window.location.assign(whatsappUrl);
         }
 
@@ -651,27 +692,39 @@
             ].join('\n');
         }
 
-        function updateProfile() {
-            const user = JSON.parse(localStorage.getItem('currentUser'));
-            user.name = document.getElementById('profile-name').value.trim();
-            localStorage.setItem('currentUser', JSON.stringify(user));
-            const users = JSON.parse(localStorage.getItem('users')) || [];
-            const account = users.find(item => item.email === user.email);
-            if (account) {
-                account.name = user.name;
-                localStorage.setItem('users', JSON.stringify(users));
+        async function updateProfile() {
+            const user = getCurrentUser();
+            if (!user) return;
+            const name = document.getElementById('profile-name').value.trim();
+            try {
+                await db.collection('users').doc(user.uid).update({ name });
+            } catch (error) {
+                console.error(error);
+                alert('Profile could not be updated. Check your connection and try again.');
+                return;
             }
+            user.name = name;
             alert('Profile updated.');
             renderDashboard('profile');
         }
 
-        function getCategories(products = JSON.parse(localStorage.getItem('products')) || []) {
-            const savedCategories = JSON.parse(localStorage.getItem('categories')) || [];
-            return [...new Set([...savedCategories, ...products.map(product => product.category).filter(Boolean)])]
+        function getCategories(products = getProducts()) {
+            return [...new Set([...getSavedCategories(), ...products.map(product => product.category).filter(Boolean)])]
                 .sort((a, b) => a.localeCompare(b));
         }
 
-        function addCategory(event) {
+        async function saveCategories(categories) {
+            try {
+                await db.doc('meta/categories').set({ list: categories });
+                return true;
+            } catch (error) {
+                console.error(error);
+                alert('Categories could not be saved. Check your connection and admin access.');
+                return false;
+            }
+        }
+
+        async function addCategory(event) {
             event.preventDefault();
             const input = document.getElementById('new-category');
             const name = input.value.trim();
@@ -681,20 +734,17 @@
                 return;
             }
             categories.push(name);
-            localStorage.setItem('categories', JSON.stringify(categories));
-            renderAdmin('inventory');
+            if (await saveCategories(categories)) renderAdmin('inventory');
         }
 
-        function removeCategory(button) {
+        async function removeCategory(button) {
             const category = button.dataset.category;
-            const products = JSON.parse(localStorage.getItem('products')) || [];
-            if (products.some(product => product.category === category)) {
+            if (getProducts().some(product => product.category === category)) {
                 alert('This category is assigned to products. Reassign those products before removing it.');
                 return;
             }
-            const categories = (JSON.parse(localStorage.getItem('categories')) || []).filter(item => item !== category);
-            localStorage.setItem('categories', JSON.stringify(categories));
-            renderAdmin('inventory');
+            const categories = getSavedCategories().filter(item => item !== category);
+            if (await saveCategories(categories)) renderAdmin('inventory');
         }
 
         function openProductModal(productId = null) {
@@ -702,7 +752,7 @@
             const preview = document.getElementById('product-image-preview');
             const product = productId === null
                 ? null
-                : (JSON.parse(localStorage.getItem('products')) || []).find(item => Number(item.id) === Number(productId));
+                : (getProducts()).find(item => Number(item.id) === Number(productId));
             if (productId !== null && !product) {
                 alert('Product could not be found.');
                 return;
@@ -711,7 +761,11 @@
             document.getElementById('p-id').value = product ? String(product.id) : '';
             document.getElementById('p-name').value = product?.name || '';
             document.getElementById('p-price').value = product?.price ?? '';
-            document.getElementById('p-category').value = product?.category || 'Electronics';
+            const categorySelect = document.getElementById('p-category');
+            const wantedCategory = product?.category || 'Electronics';
+            categorySelect.value = [...categorySelect.options].some(option => option.value === wantedCategory)
+                ? wantedCategory
+                : (categorySelect.options[0]?.value ?? '');
             document.getElementById('p-desc').value = product?.description || '';
             document.getElementById('product-modal-title').textContent = product ? 'Edit Product' : 'Add New Product';
             document.getElementById('product-save-button').textContent = product ? 'Save Changes' : 'Save Product';
@@ -749,66 +803,115 @@
             document.getElementById('product-modal').hidden = true;
         }
 
+        function compressImage(file, maxSide = 800) {
+            return new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+                    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round(img.width * scale));
+                    canvas.height = Math.max(1, Math.round(img.height * scale));
+                    const context = canvas.getContext('2d');
+                    context.fillStyle = '#ffffff';
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    context.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    let quality = 0.78;
+                    let dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    // Firestore documents are limited to 1 MB, so keep shrinking until it fits.
+                    while (dataUrl.length > 700000 && quality > 0.3) {
+                        quality -= 0.1;
+                        dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    }
+                    resolve(dataUrl);
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    reject(new Error('The selected photo could not be read.'));
+                };
+                img.src = url;
+            });
+        }
+
+        let savingProduct = false;
+
         async function saveNewProduct(event) {
             event.preventDefault();
-            const products = JSON.parse(localStorage.getItem('products')) || [];
+            if (savingProduct) return;
+            const products = getProducts();
             const productId = document.getElementById('p-id').value;
             const existingIndex = products.findIndex(product => String(product.id) === productId);
             const imageFile = document.getElementById('p-image').files[0];
             let image = existingIndex >= 0 ? products[existingIndex].image : '';
-            if (imageFile) {
-                try {
-                    image = await new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = () => resolve(reader.result);
-                        reader.onerror = () => reject(new Error('The selected photo could not be read.'));
-                        reader.onabort = () => reject(new Error('Reading the selected photo was cancelled.'));
-                        reader.readAsDataURL(imageFile);
-                    });
-                } catch (error) {
-                    alert(error.message);
+            savingProduct = true;
+            try {
+                if (imageFile) image = await compressImage(imageFile);
+                const product = {
+                    id: existingIndex >= 0 ? products[existingIndex].id : Date.now(),
+                    name: document.getElementById('p-name').value.trim(),
+                    price: Number(document.getElementById('p-price').value),
+                    image,
+                    category: document.getElementById('p-category').value,
+                    description: document.getElementById('p-desc').value.trim()
+                };
+                if (!product.image) {
+                    alert('Upload a product photo before saving.');
                     return;
                 }
-            }
-            const product = {
-                id: existingIndex >= 0 ? products[existingIndex].id : Date.now(),
-                name: document.getElementById('p-name').value.trim(),
-                price: Number(document.getElementById('p-price').value),
-                image,
-                category: document.getElementById('p-category').value,
-                description: document.getElementById('p-desc').value.trim()
-            };
-            if (!product.image) {
-                alert('Upload a product photo before saving.');
-                return;
-            }
-            if (existingIndex >= 0) products[existingIndex] = product;
-            else products.push(product);
-            try {
-                localStorage.setItem('products', JSON.stringify(products));
+                await db.collection('products').doc(String(product.id)).set(product);
             } catch (error) {
-                alert('Product could not be saved in this browser. The photo may be too large for local storage.');
+                console.error(error);
+                alert(error.code
+                    ? 'Product could not be saved. Check your connection and that you are signed in as an admin.'
+                    : error.message);
                 return;
+            } finally {
+                savingProduct = false;
             }
             closeProductModal();
             renderAdmin('inventory');
         }
 
-        function deleteProduct(id) {
+        async function deleteProduct(id) {
             if (!confirm('Delete this product?')) return;
-            const products = (JSON.parse(localStorage.getItem('products')) || []).filter(product => Number(product.id) !== Number(id));
-            localStorage.setItem('products', JSON.stringify(products));
+            try {
+                await db.collection('products').doc(String(id)).delete();
+            } catch (error) {
+                console.error(error);
+                alert('Product could not be deleted. Check your connection and admin access.');
+                return;
+            }
             renderAdmin('inventory');
         }
 
         document.getElementById('primary-navigation').addEventListener('click', event => {
             if (event.target.closest('a')) toggleMenu(true);
         });
-        window.addEventListener('hashchange', renderPage);
-        document.addEventListener('DOMContentLoaded', () => {
+        // Re-draw the current page when shared data changes on another device,
+        // without interrupting typing, an open product form, or the current tab.
+        function refreshView() {
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+            const { page } = routeInfo();
+            if (page === 'home') renderHome();
+            else if (page === 'search') renderSearch();
+            else if (page === 'admin') {
+                if (document.getElementById('product-modal')?.hidden === false) return;
+                renderAdmin(lastAdminTab);
+            } else if (page === 'dashboard' && lastDashboardTab === 'orders') renderDashboard('orders');
+        }
+
+        window.addEventListener('hashchange', () => {
+            if (appReady) renderPage();
+        });
+
+        (async function boot() {
+            app.innerHTML = '<p class="text-center mt-20">Loading…</p>';
+            await dataReady;
+            appReady = true;
             if (!location.hash) location.hash = '#/home';
             else renderPage();
-        });
+        })();
     </script>
 </body>
 </html>
