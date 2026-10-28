@@ -1038,6 +1038,49 @@ th {
     width: 100%;
 }
 
+.admin-page {
+    width: 100%;
+    min-width: 0;
+    margin: 28px 0 50px;
+}
+
+.admin-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px;
+    margin-bottom: 24px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+}
+
+.admin-tab {
+    min-height: 40px;
+    padding: 9px 16px;
+    color: #aaa39a;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    font: inherit;
+    text-align: center;
+}
+
+.admin-tab:hover,
+.admin-tab.active {
+    color: #17120d;
+    background: var(--accent-orange);
+}
+
+.admin-page > section {
+    min-width: 0;
+}
+
+.admin-orders {
+    margin-top: 32px;
+}
+
 .checkout-section h2 {
     padding-bottom: 10px;
     margin-bottom: 18px;
@@ -1054,6 +1097,11 @@ th {
 
 .stats-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.stats-grid.inventory-stats {
+    grid-template-columns: minmax(0, 1fr);
+    margin-bottom: 16px;
 }
 
 .stat-card {

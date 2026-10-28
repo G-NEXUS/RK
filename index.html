@@ -382,12 +382,21 @@
             const products = JSON.parse(localStorage.getItem('products')) || [];
             const categories = getCategories(products);
             const orders = JSON.parse(localStorage.getItem('allOrders')) || [];
-            let content = '';
+            let content;
             if (tab === 'overview') {
                 const sales = orders.reduce((sum, order) => sum + Number(order.total), 0);
-                content = `<h2 class="mb-20">Store Overview</h2><div class="stats-grid"><div class="stat-card"><p>Total Sales</p><div class="stat-val">${formatMoney(sales)}</div></div><div class="stat-card"><p>Total Orders</p><div class="stat-val">${orders.length}</div></div><div class="stat-card"><p>Products</p><div class="stat-val">${products.length}</div></div></div>`;
+                content = `<h2 class="mb-20">Store Overview</h2>
+                    <div class="stats-grid">
+                        <div class="stat-card"><p>Total Sales</p><div class="stat-val">${formatMoney(sales)}</div></div>
+                        <div class="stat-card"><p>Total Orders</p><div class="stat-val">${orders.length}</div></div>
+                        <div class="stat-card"><p>Products</p><div class="stat-val">${products.length}</div></div>
+                    </div>`;
             } else if (tab === 'inventory') {
                 content = `<div class="section-heading"><h2>Inventory Management</h2><button class="btn" onclick="openProductModal()">+ Add Product</button></div>
+                    <div class="stats-grid inventory-stats">
+                        <div class="stat-card"><p>Inventory</p><div class="stat-val">${products.length}</div></div>
+                        <div class="stat-card"><p>Total Orders</p><div class="stat-val">${orders.length}</div></div>
+                    </div>
                     <section class="category-manager" aria-labelledby="category-manager-title">
                         <h3 id="category-manager-title">Product Categories</h3>
                         <form class="category-form" onsubmit="addCategory(event)">
@@ -399,13 +408,16 @@
                     </section>
                     <div class="table-wrap"><table><thead><tr><th>ID</th><th>Photo</th><th>Product</th><th>Category</th><th>Price</th><th>Actions</th></tr></thead><tbody>${products.map(product => `<tr><td>${Number(product.id)}</td><td><img class="inventory-thumb" src="${escapeHtml(product.image)}" alt=""></td><td>${escapeHtml(product.name)}</td><td>${escapeHtml(product.category)}</td><td>${formatMoney(product.price)}</td><td><div class="inventory-actions"><button class="btn btn-outline btn-small" onclick="openProductModal(${Number(product.id)})">Edit</button><button class="remove-btn" onclick="deleteProduct(${Number(product.id)})">Delete</button></div></td></tr>`).join('')}</tbody></table></div>`;
             } else {
-                content = `<h2>Order Tracking</h2><div class="table-wrap"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Email</th><th>Delivery Address</th><th>Items</th><th>Date</th><th>Total</th><th>Status</th></tr></thead><tbody>${[...orders].reverse().map(order => `<tr><td>${escapeHtml(order.id)}</td><td>${escapeHtml(order.customer)}</td><td>${escapeHtml(order.email)}</td><td>${escapeHtml(order.address)}, ${escapeHtml(order.city)} ${escapeHtml(order.zip)}</td><td>${order.items.map(item => `${escapeHtml(item.name)} × ${Number(item.quantity)}`).join('<br>')}</td><td>${escapeHtml(order.date)}</td><td>${formatMoney(order.total)}</td><td>${escapeHtml(order.status)}</td></tr>`).join('')}</tbody></table></div>`;
+                content = `<h2 class="mb-20">Order Tracking</h2><div class="table-wrap"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Email</th><th>Delivery Address</th><th>Items</th><th>Date</th><th>Total</th><th>Status</th></tr></thead><tbody>${[...orders].reverse().map(order => `<tr><td>${escapeHtml(order.id)}</td><td>${escapeHtml(order.customer)}</td><td>${escapeHtml(order.email)}</td><td>${escapeHtml(order.address)}, ${escapeHtml(order.city)} ${escapeHtml(order.zip)}</td><td>${order.items.map(item => `${escapeHtml(item.name)} × ${Number(item.quantity)}`).join('<br>')}</td><td>${escapeHtml(order.date)}</td><td>${formatMoney(order.total)}</td><td>${escapeHtml(order.status)}</td></tr>`).join('')}</tbody></table></div>`;
             }
-            app.innerHTML = `<div class="admin-layout"><aside class="sidebar">
-                <button class="sidebar-link ${tab === 'overview' ? 'active' : ''}" onclick="renderAdmin('overview')">Overview</button>
-                <button class="sidebar-link ${tab === 'inventory' ? 'active' : ''}" onclick="renderAdmin('inventory')">Inventory</button>
-                <button class="sidebar-link ${tab === 'orders' ? 'active' : ''}" onclick="renderAdmin('orders')">Orders</button>
-            </aside><section>${content}</section></div>
+            app.innerHTML = `<div class="admin-page">
+                <nav class="admin-tabs" aria-label="Admin sections">
+                    <button type="button" class="admin-tab ${tab === 'overview' ? 'active' : ''}" aria-current="${tab === 'overview' ? 'page' : 'false'}" onclick="renderAdmin('overview')">Overview</button>
+                    <button type="button" class="admin-tab ${tab === 'inventory' ? 'active' : ''}" aria-current="${tab === 'inventory' ? 'page' : 'false'}" onclick="renderAdmin('inventory')">Inventory</button>
+                    <button type="button" class="admin-tab ${tab === 'orders' ? 'active' : ''}" aria-current="${tab === 'orders' ? 'page' : 'false'}" onclick="renderAdmin('orders')">Orders</button>
+                </nav>
+                <section>${content}</section>
+            </div>
             <div id="product-modal" class="modal" hidden><div class="form-container modal-content"><h2 class="mb-20" id="product-modal-title">Add New Product</h2><form id="product-form" onsubmit="saveNewProduct(event)">
                 <input id="p-id" type="hidden">
                 <div class="form-group"><label for="p-name">Name</label><input id="p-name" required></div><div class="form-group"><label for="p-price">Price (K)</label><input id="p-price" type="number" min="0" step="0.01" required></div>
