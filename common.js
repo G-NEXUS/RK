@@ -1,38 +1,194 @@
-// Shared storefront data and cart helpers.
+// Shared storefront data (Firebase) and cart helpers.
+// Products, categories, accounts and orders live in Firebase.
+// The shopping cart stays in this browser's localStorage, as before.
+
+const firebaseConfig = {
+    apiKey: "AIzaSyCHAemBi71qB9diMJ9--_IlnCt2mzc3cV4",
+    authDomain: "rk-main-c7124.firebaseapp.com",
+    projectId: "rk-main-c7124",
+    storageBucket: "rk-main-c7124.firebasestorage.app",
+    messagingSenderId: "31301974162",
+    appId: "1:31301974162:web:c5ef6cd84e3e7ff2928e4b"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// In-memory copy of the data, kept fresh by Firestore listeners.
+const store = {
+    products: [],
+    categories: [],
+    allOrders: [],      // admin only
+    myOrders: [],       // signed-in customer's own orders
+    recentOrders: {},   // orders placed in this session (guests can't read them back)
+    user: null          // { uid, name, email, isAdmin }
+};
+
+let appReady = false;
+let registering = false;
+let syncCounter = 0;
+let stopOrdersListener = () => {};
+
+// Remove data the old localStorage version left behind (it held passwords in plain text).
+['products', 'categories', 'users', 'allOrders', 'currentUser'].forEach(key => localStorage.removeItem(key));
+Object.keys(localStorage)
+    .filter(key => key.startsWith('orders_'))
+    .forEach(key => localStorage.removeItem(key));
 
 document.addEventListener('DOMContentLoaded', () => {
     updateCartCount();
-    checkLoginStatus();
 });
 
-// Mock Database / Initial Products
-const initialProducts = [
-    { id: 1, name: "Classic Watch", price: 120, image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400", category: "Accessories", description: "A timeless classic for every occasion." },
-    { id: 2, name: "Noise-Cancelling Headphones", price: 85, image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400", category: "Electronics", description: "Immerse yourself in sound without distractions." },
-    { id: 3, name: "Digital DSLR Camera", price: 450, image: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=400", category: "Electronics", description: "Capture life's moments in stunning detail." },
-    { id: 4, name: "Premium Sport Shoes", price: 99, image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400", category: "Apparel", description: "Engineered for comfort and performance." },
-    { id: 5, name: "Minimalist Backpack", price: 65, image: "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=400", category: "Accessories", description: "Sleek design with maximum storage." },
-    { id: 6, name: "Mechanical Keyboard", price: 150, image: "https://images.unsplash.com/photo-1511467687858-23d96c32e4ae?w=400", category: "Electronics", description: "Tactile feedback for the ultimate typing experience." },
-    { id: 7, name: "Smart Fitness Tracker", price: 45, image: "https://images.unsplash.com/photo-1575311373937-040b8e1fd5b6?w=400", category: "Electronics", description: "Monitor your health and activity 24/7." },
-    { id: 8, name: "Leather Wallet", price: 35, image: "https://images.unsplash.com/photo-1627123424574-724758594e93?w=400", category: "Accessories", description: "Genuine leather with a slim profile." },
-    { id: 9, name: "Wireless Gaming Mouse", price: 75, image: "https://images.unsplash.com/photo-1527814732934-94a1fe71fe73?w=400", category: "Electronics", description: "Precision and speed for competitive gaming." },
-    { id: 10, name: "Bluetooth Speaker", price: 55, image: "https://images.unsplash.com/photo-1608156639585-34a0a56ee6c9?w=400", category: "Electronics", description: "Powerful sound in a portable design." }
-];
+// ---------- Data access ----------
+function getProducts() { return store.products; }
+function getSavedCategories() { return store.categories; }
+function getCurrentUser() { return store.user; }
+function getAllOrders() { return store.allOrders; }
+function getMyOrders() { return store.myOrders; }
 
-const initialCategories = ["Electronics", "Accessories", "Apparel"];
-
-// Initialize LocalStorage if empty
-if (!localStorage.getItem('products')) {
-    localStorage.setItem('products', JSON.stringify(initialProducts));
+function getOrderById(id) {
+    return store.recentOrders[id]
+        || store.allOrders.find(order => order.id === id)
+        || store.myOrders.find(order => order.id === id);
 }
 
-if (!localStorage.getItem('categories')) {
-    localStorage.setItem('categories', JSON.stringify(initialCategories));
+function rememberOrder(order) {
+    store.recentOrders[order.id] = order;
 }
 
-// Cart Functions
+// ---------- Firestore listeners ----------
+function listen(query, onData) {
+    let unsubscribe = () => {};
+    const ready = new Promise(resolve => {
+        let first = true;
+        unsubscribe = query.onSnapshot(
+            snapshot => {
+                onData(snapshot);
+                if (first) {
+                    first = false;
+                    resolve();
+                } else if (appReady && typeof refreshView === 'function') {
+                    refreshView();
+                }
+            },
+            error => {
+                console.error('Firestore listener error:', error);
+                if (first) {
+                    first = false;
+                    resolve();
+                }
+            }
+        );
+    });
+    return { ready, unsubscribe: () => unsubscribe() };
+}
+
+const productsListener = listen(db.collection('products'), snapshot => {
+    store.products = snapshot.docs
+        .map(doc => doc.data())
+        .sort((a, b) => Number(a.id) - Number(b.id));
+});
+
+const categoriesListener = listen(db.doc('meta/categories'), snapshot => {
+    store.categories = snapshot.exists && Array.isArray(snapshot.data().list) ? snapshot.data().list : [];
+});
+
+// ---------- Auth ----------
+async function syncUser(fbUser) {
+    const token = ++syncCounter;
+    stopOrdersListener();
+    stopOrdersListener = () => {};
+    store.allOrders = [];
+    store.myOrders = [];
+
+    if (!fbUser) {
+        store.user = null;
+        return;
+    }
+
+    let profile = {};
+    try {
+        const snapshot = await db.collection('users').doc(fbUser.uid).get();
+        if (snapshot.exists) {
+            profile = snapshot.data();
+        } else {
+            profile = {
+                name: fbUser.displayName || (fbUser.email || '').split('@')[0],
+                email: fbUser.email || '',
+                isAdmin: false
+            };
+            db.collection('users').doc(fbUser.uid).set(profile).catch(error => console.error('Profile create failed:', error));
+        }
+    } catch (error) {
+        console.error('Could not load the account profile:', error);
+    }
+    if (token !== syncCounter) return;
+
+    store.user = {
+        uid: fbUser.uid,
+        name: profile.name || '',
+        email: profile.email || fbUser.email || '',
+        isAdmin: profile.isAdmin === true
+    };
+
+    const query = store.user.isAdmin
+        ? db.collection('orders').orderBy('createdAtMs')
+        : db.collection('orders').where('uid', '==', fbUser.uid);
+    const ordersListener = listen(query, snapshot => {
+        const orders = snapshot.docs.map(doc => doc.data()).sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0));
+        if (store.user?.isAdmin) store.allOrders = orders;
+        else store.myOrders = orders;
+    });
+    stopOrdersListener = ordersListener.unsubscribe;
+    await ordersListener.ready;
+}
+
+const authReady = new Promise(resolve => {
+    auth.onAuthStateChanged(async fbUser => {
+        if (registering) return; // handleRegister signs the new account out itself
+        await syncUser(fbUser);
+        resolve();
+        if (appReady && typeof renderPage === 'function') renderPage();
+    });
+});
+
+// Resolves once the first page can be drawn (or after 10 s, so the site never hangs on a blank screen).
+const dataReady = Promise.race([
+    Promise.all([productsListener.ready, categoriesListener.ready, authReady]),
+    new Promise(resolve => setTimeout(() => {
+        console.warn('Firebase is slow to respond; showing the shop with what has loaded.');
+        resolve();
+    }, 10000))
+]);
+
+function waitForUser(uid, timeout = 8000) {
+    return new Promise(resolve => {
+        const started = Date.now();
+        (function check() {
+            if (store.user?.uid === uid || Date.now() - started > timeout) resolve(store.user);
+            else setTimeout(check, 50);
+        })();
+    });
+}
+
+function logout() {
+    store.user = null;
+    store.allOrders = [];
+    store.myOrders = [];
+    stopOrdersListener();
+    stopOrdersListener = () => {};
+    auth.signOut().catch(error => console.error('Sign out failed:', error));
+    window.location.hash = '#/home';
+}
+
+// ---------- Cart ----------
 function getCart() {
-    return JSON.parse(localStorage.getItem('cart')) || [];
+    try {
+        return JSON.parse(localStorage.getItem('cart')) || [];
+    } catch (error) {
+        return [];
+    }
 }
 
 function saveCart(cart) {
@@ -41,8 +197,7 @@ function saveCart(cart) {
 }
 
 function addToCart(productId, quantity = 1, options = {}) {
-    const products = JSON.parse(localStorage.getItem('products')) || [];
-    const product = products.find(p => Number(p.id) === Number(productId));
+    const product = getProducts().find(p => Number(p.id) === Number(productId));
     if (!product) return false;
 
     const safeQuantity = Math.max(1, Number.parseInt(quantity, 10) || 1);
@@ -74,38 +229,5 @@ function updateCartCount() {
     const cartCountElement = document.getElementById('cart-count');
     if (cartCountElement) {
         cartCountElement.innerText = count;
-    }
-}
-
-// Auth Functions
-function checkLoginStatus() {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    const authLinks = document.getElementById('auth-links');
-    if (authLinks) {
-        if (user) {
-            authLinks.innerHTML = `
-                <a href="#/dashboard">Dashboard</a>
-                ${user.isAdmin ? '<a href="#/admin">Admin</a>' : ''}
-                <a href="#/home" onclick="logout()">Logout</a>
-            `;
-        } else {
-            authLinks.innerHTML = `
-                <a href="#/login">Login</a>
-                <a href="#/register">Register</a>
-            `;
-        }
-    }
-}
-
-function logout() {
-    localStorage.removeItem('currentUser');
-    window.location.hash = '#/home';
-}
-
-// Search Function
-function performSearch() {
-    const query = document.getElementById('search-input').value;
-    if (query) {
-        window.location.hash = `#/search?q=${encodeURIComponent(query)}`;
     }
 }
