@@ -899,7 +899,7 @@ async function processOrder() {
         console.error('Order could not be saved to the database:', error);
     }
     rememberOrder(order);
-    const whatsappUrl = `https://wa.me/260768201389?text=${encodeURIComponent(formatCartWhatsAppMessage(order))}`;
+    const whatsappUrl = `https://wa.me/260961005957?text=${encodeURIComponent(formatCartWhatsAppMessage(order))}`;
     localStorage.removeItem('cart');
     processingOrder = false;
     window.location.assign(whatsappUrl);
