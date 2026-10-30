@@ -1,4 +1,4 @@
-// Shared storefront data (Firebase) and cart helpers.
+/*/ Shared storefront data (Firebase) and cart helpers.
 // Products, categories, accounts and orders live in Firebase.
 // The shopping cart stays in this browser's localStorage, as before.
 
@@ -9,7 +9,7 @@ import firebaseConfig from './config.js';
 firebase.initializeApp(firebaseConfig);
 
 const auth = firebase.auth();
-const db = firebase.firestore();
+const db = firebase.firestore();*/
 
 
 const firebaseConfig = {
