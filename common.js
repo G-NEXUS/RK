@@ -529,7 +529,7 @@ function renderCheckout() {
 function renderOrderSuccess() {
     const orderId = routeInfo().params.get('id') || '';
     const order = getOrderById(orderId);
-    const whatsappUrl = order ? `https://wa.me/260768201389?text=${encodeURIComponent(formatOrderMessage(order))}` : '';
+    const whatsappUrl = order ? `https://wa.me/260961005957?text=${encodeURIComponent(formatOrderMessage(order))}` : '';
     app.innerHTML = `<div class="text-center empty-state"><div class="success-mark" aria-hidden="true">✓</div><h1>Order Confirmed!</h1>
         <p class="mb-20">Thank you for your purchase. Your order <strong>${escapeHtml(orderId)}</strong> is being processed.</p><p>Your order details are saved in the admin dashboard.</p>
         ${whatsappUrl ? `<p class="whatsapp-note">Continue to WhatsApp to share your order with the admin. You will need to press Send in WhatsApp.</p><a class="btn whatsapp-button" href="${whatsappUrl}" target="_blank" rel="noopener noreferrer">Share Order on WhatsApp</a>` : ''}
