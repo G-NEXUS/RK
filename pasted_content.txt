@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RK General Dealers | Responsive Grid</title>
+    <style>
+        /* General Styles - Sleek dark aesthetic */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        body {
+            background-color: #0b0e14;
+            color: #e0e0e0;
+        }
+
+        /* Sticky Navigation Bar */
+        nav {
+            background: #000;
+            padding: 1rem 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #ff8a24;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #ff8a24;
+            text-decoration: none;
+        }
+
+        .cart-icon {
+            background: #ff8a24;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 20px;
+        }
+
+        /* Hero Section */
+        .hero {
+            background: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), 
+                        url('https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1350&q=80');
+            background-size: cover;
+            background-position: center;
+            height: 250px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        /* Container Width */
+        .container {
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 0 10px;
+        }
+
+        /* Responsive Grid Configuration */
+        .product-grid {
+            display: grid;
+            gap: 15px;
+            /* Updated: 2 cards per row for small screens */
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        /* Tablet: 3 columns */
+        @media (min-width: 768px) {
+            .product-grid {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 20px;
+            }
+        }
+
+        /* Big Screen: 5 columns */
+        @media (min-width: 1100px) {
+            .product-grid {
+                grid-template-columns: repeat(5, 1fr);
+            }
+        }
+
+        /* Product Card - Modern UI */
+        .product-card {
+            background: #161b22;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #30363d;
+            transition: transform 0.3s;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .product-card:hover {
+            transform: translateY(-5px);
+            border-color: #ff8a24;
+        }
+
+        .product-image img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+        }
+
+        .product-info {
+            padding: 10px;
+            text-align: center;
+            flex-grow: 1;
+        }
+
+        .product-price {
+            color: #ff8a24;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        /* Add to Cart Button */
+        .add-btn {
+            background: #ff8a24;
+            color: white;
+            border: none;
+            padding: 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        footer {
+            background: #000;
+            color: #666;
+            text-align: center;
+            padding: 20px;
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <a href="#" class="logo">RK General Dealers</a>
+        <span class="cart-icon">Cart: <span id="cart-count">0</span></span>
+    </nav>
+
+    <header class="hero">
+        <h1>Mobile Optimized</h1>
+        <p>Two-column view for smaller screens.</p>
+    </header>
+
+    <div class="container">
+        <div class="product-grid">
+            <div class="product-card">
+                <div class="product-image"><img src="https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400" alt="Watch"></div>
+                <div class="product-info">
+                    <h5>Classic Watch</h5>
+                    <p class="product-price">$120</p>
+                    <button class="add-btn" onclick="addToCart()">Add</button>
+                </div>
+            </div>
+            <div class="product-card">
+                <div class="product-image"><img src="https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400" alt="Headphones"></div>
+                <div class="product-info">
+                    <h5>Headphones</h5>
+                    <p class="product-price">$85</p>
+                    <button class="add-btn" onclick="addToCart()">Add</button>
+                </div>
+            </div>
+            <div class="product-card">
+                <div class="product-image"><img src="https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=400" alt="Camera"></div>
+                <div class="product-info">
+                    <h5>Digital Camera</h5>
+                    <p class="product-price">$450</p>
+                    <button class="add-btn" onclick="addToCart()">Add</button>
+                </div>
+            </div>
+            <div class="product-card">
+                <div class="product-image"><img src="https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400" alt="Shoes"></div>
+                <div class="product-info">
+                    <h5>Sport Shoes</h5>
+                    <p class="product-price">$99</p>
+                    <button class="add-btn" onclick="addToCart()">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 RK General Dealers.</p>
+    </footer>
+
+    <script>
+        let count = 0;
+        function addToCart() {
+            count++;
+            document.getElementById('cart-count').innerText = count;
+        }
+    </script>
+</body>
+</html>

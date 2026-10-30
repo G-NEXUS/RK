@@ -1,18 +1,22 @@
 // Shared storefront data (Firebase) and cart helpers.
 // Products, categories, accounts and orders live in Firebase.
 // The shopping cart stays in this browser's localStorage, as before.
-// Import the hidden config object at the very top
-import firebaseConfig from './config.js';
 
-// Initialize Firebase using the imported config
+const firebaseConfig = {
+    apiKey: "AIzaSyCHAemBi71qB9diMJ9--_IlnCt2mzc3cV4",
+    authDomain: "rk-main-c7124.firebaseapp.com",
+    projectId: "rk-main-c7124",
+    storageBucket: "rk-main-c7124.firebasestorage.app",
+    messagingSenderId: "31301974162",
+    appId: "1:31301974162:web:c5ef6cd84e3e7ff2928e4b"
+};
+
 firebase.initializeApp(firebaseConfig);
-
 const auth = firebase.auth();
 const db = firebase.firestore();
 
 // In-memory copy of the data, kept fresh by Firestore listeners.
 const store = {
-    // Keep the latest remote data in memory so rendering does not need to fetch repeatedly.
     products: [],
     categories: [],
     variantCategories: [],   // categories whose products need size & color
@@ -46,7 +50,6 @@ function getAllOrders() { return store.allOrders; }
 function getMyOrders() { return store.myOrders; }
 
 function getOrderById(id) {
-    // A just-created guest order may not be readable from Firestore, so check the session cache first.
     return store.recentOrders[id]
         || store.allOrders.find(order => order.id === id)
         || store.myOrders.find(order => order.id === id);
@@ -59,7 +62,6 @@ function rememberOrder(order) {
 // ---------- Firestore listeners ----------
 function listen(query, onData) {
     let unsubscribe = () => {};
-    // Resolve readiness on the first snapshot or first error so startup cannot wait forever.
     const ready = new Promise(resolve => {
         let first = true;
         unsubscribe = query.onSnapshot(
@@ -98,7 +100,6 @@ const categoriesListener = listen(db.doc('meta/categories'), snapshot => {
 
 // ---------- Auth ----------
 async function syncUser(fbUser) {
-    // Invalidate any earlier async profile lookup when auth changes again.
     const token = ++syncCounter;
     stopOrdersListener();
     stopOrdersListener = () => {};
@@ -138,7 +139,6 @@ async function syncUser(fbUser) {
     const query = store.user.isAdmin
         ? db.collection('orders').orderBy('createdAtMs')
         : db.collection('orders').where('uid', '==', fbUser.uid);
-    // Admins receive the full ordered collection; customers only receive their own orders.
     const ordersListener = listen(query, snapshot => {
         const orders = snapshot.docs.map(doc => doc.data()).sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0));
         if (store.user?.isAdmin) store.allOrders = orders;
@@ -160,7 +160,6 @@ const authReady = new Promise(resolve => {
 // Resolves once the first page can be drawn (or after 10 s, so the site never hangs on a blank screen).
 const dataReady = Promise.race([
     Promise.all([productsListener.ready, categoriesListener.ready, authReady]),
-    // Let the page render with partial data if Firebase is unusually slow.
     new Promise(resolve => setTimeout(() => {
         console.warn('Firebase is slow to respond; showing the shop with what has loaded.');
         resolve();
@@ -206,13 +205,11 @@ function addToCart(productId, quantity = 1, options = {}) {
     if (!product) return false;
 
     const safeQuantity = Math.max(1, Number.parseInt(quantity, 10) || 1);
-    // Sort option keys so the same product variant has the same identity regardless of selection order.
     const selectedOptions = Object.fromEntries(
         Object.entries(options).sort(([first], [second]) => first.localeCompare(second))
     );
     const optionsKey = JSON.stringify(selectedOptions);
     const cart = getCart();
-    // Merge only matching products with matching option selections.
     const existingItem = cart.find(item =>
         Number(item.id) === Number(productId) &&
         JSON.stringify(Object.fromEntries(
@@ -258,14 +255,12 @@ function formatMoney(value) {
 }
 
 function escapeHtml(value) {
-    // Encode HTML-significant characters before inserting user or product data into markup.
     return String(value ?? '').replace(/[&<>"']/g, character => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     })[character]);
 }
 
 function routeInfo() {
-    // Split the hash route from its query string to support URLs such as #/product?id=123.
     const [path = '/home', query = ''] = location.hash.slice(1).split('?');
     return { page: path.replace(/^\/+/, '') || 'home', params: new URLSearchParams(query) };
 }
@@ -323,7 +318,6 @@ function getProductPhotos(product) {
 }
 
 function cartSummaryMarkup(productId) {
-    // A product can have multiple cart rows when its selected options differ.
     const lines = getCart().filter(item => Number(item.id) === Number(productId));
     if (!lines.length) return '';
     return `<p class="cart-summary-title">In your cart</p>
@@ -386,7 +380,6 @@ function renderSearch() {
     const query = routeInfo().params.get('q') || '';
     const normalizedQuery = query.toLowerCase();
     const products = getProducts();
-    // Search across all customer-facing product text, treating missing values as empty strings.
     const matches = products.filter(product => [product.name, product.category, product.description]
         .some(value => String(value || '').toLowerCase().includes(normalizedQuery)));
     app.innerHTML = `<h1 class="section-title mt-20">Search results for "${escapeHtml(query)}"</h1>
@@ -409,7 +402,6 @@ function showProductPhoto(index) {
 function renderProduct() {
     const id = routeInfo().params.get('id');
     const product = getProducts().find(item => String(item.id) === id);
-    // Keep a useful recovery path when a stale or invalid product link is opened.
     if (!product) {
         app.innerHTML = '<div class="empty-state"><h1>Product not found.</h1><a class="btn mt-20" href="#/home">Back to shop</a></div>';
         return;
@@ -695,7 +687,6 @@ function isInCart(productId) {
 
 // Keeps every "Add to Cart" button in step with what is actually in this visitor's cart.
 function syncCartButtons() {
-    // Use string IDs because values read from DOM data attributes are strings.
     const inCart = new Set(getCart().map(item => String(item.id)));
     document.querySelectorAll('[data-cart-id]').forEach(button => {
         const added = inCart.has(button.dataset.cartId);
@@ -709,7 +700,6 @@ function syncCartButtons() {
 function readSelectedOptions() {
     const selects = [...document.querySelectorAll('.product-option select')];
     const missing = selects.filter(select => !select.value);
-    // Focus the first missing field so the customer can correct the selection immediately.
     if (missing.length) {
         alert(`Please select ${missing.map(select => select.dataset.optionName.toLowerCase()).join(' and ')}.`);
         missing[0].focus();
@@ -878,7 +868,6 @@ async function processOrder() {
     }
     processingOrder = true;
     const user = getCurrentUser();
-    // Persist only the product details needed for order history, leaving large photos out.
     const order = {
         id: `ORD-${Date.now()}`,
         date: new Date().toLocaleDateString(),
@@ -901,7 +890,6 @@ async function processOrder() {
         createdAtMs: Date.now()
     };
     try {
-        // Bound the wait so a slow database does not prevent the WhatsApp checkout flow.
         await Promise.race([
             db.collection('orders').doc(order.id).set(order),
             new Promise((_, reject) => setTimeout(() => reject(new Error('Saving the order timed out.')), 8000))
@@ -923,7 +911,6 @@ function formatCartWhatsAppMessage(order) {
         maximumFractionDigits: 2
     });
     const money = value => `K${messageCurrency.format(Number(value) || 0)}`;
-    // Include each item's chosen variant and line subtotal in the message sent to the admin.
     const items = order.items.map(item => {
         const options = Object.entries(item.options || {})
             .map(([name, value]) => `${name}: ${value}`)
@@ -939,7 +926,7 @@ function formatCartWhatsAppMessage(order) {
         '-------------------------',
         `💰 *Total Amount:* ${money(order.total)}`,
         '',
-        'Please confirm my order!'
+        'Please confirm these products are available.'
     ].join('\n');
 }
 
@@ -985,7 +972,6 @@ function categoryNeedsVariants(category) {
 
 async function saveCategories(categories, variantCategories = getVariantCategories()) {
     try {
-        // Remove variant flags for categories that are no longer in the saved category list.
         await db.doc('meta/categories').set({
             list: categories,
             variantCategories: variantCategories.filter(category => categories.includes(category))
@@ -1031,7 +1017,6 @@ async function removeCategory(button) {
 }
 
 const MAX_PHOTOS = 7;
-// Keep aggregate image data comfortably below Firestore's per-document size limit.
 const PHOTO_BUDGET = 115000; // characters per photo, so 7 photos always fit in one 1 MB Firestore document
 let modalPhotos = [];
 
@@ -1059,7 +1044,6 @@ function makeMainPhoto(index) {
 async function addProductPhotos(event) {
     const input = event.target;
     const files = [...input.files];
-    // Clear the picker so the same file can be selected again after removal or validation failure.
     input.value = '';
     if (!files.length) return;
     const room = MAX_PHOTOS - modalPhotos.length;
@@ -1138,7 +1122,6 @@ function loadImage(src) {
 
 // Accepts a File or an existing data URL; returns a JPEG data URL within the per-photo size budget.
 async function compressImage(source, budget = PHOTO_BUDGET) {
-    // Existing data URLs are reused directly; uploaded Files get a temporary object URL.
     const isFile = typeof source !== 'string';
     const url = isFile ? URL.createObjectURL(source) : source;
     try {
@@ -1146,7 +1129,6 @@ async function compressImage(source, budget = PHOTO_BUDGET) {
         let side = 800;
         let quality = 0.8;
         for (let attempt = 0; attempt < 14; attempt++) {
-            // Reduce dimensions only after lowering JPEG quality, preserving detail where possible.
             const scale = Math.min(1, side / Math.max(img.width, img.height));
             const canvas = document.createElement('canvas');
             canvas.width = Math.max(1, Math.round(img.width * scale));
@@ -1169,7 +1151,6 @@ async function compressImage(source, budget = PHOTO_BUDGET) {
 function splitList(value) {
     const items = String(value || '').split(',').map(item => item.trim().slice(0, 40)).filter(Boolean);
     const seen = new Set();
-    // De-duplicate case-insensitively while preserving the first spelling and input order.
     return items.filter(item => {
         const key = item.toLowerCase();
         if (seen.has(key)) return false;
@@ -1190,7 +1171,6 @@ async function saveNewProduct(event) {
     const products = getProducts();
     const productId = document.getElementById('p-id').value;
     const existingIndex = products.findIndex(product => String(product.id) === productId);
-    // Keep the save lock set until all image processing and Firestore writes have finished.
     const category = document.getElementById('p-category').value;
     savingProduct = true;
     try {
@@ -1257,7 +1237,6 @@ function refreshView() {
 }
 
 window.addEventListener('hashchange', () => {
-    // Ignore navigation events during startup; boot() renders once initial data is ready.
     if (appReady) renderPage();
 });
 
