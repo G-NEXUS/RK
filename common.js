@@ -2,18 +2,15 @@
 // Products, categories, accounts and orders live in Firebase.
 // The shopping cart stays in this browser's localStorage, as before.
 
-const firebaseConfig = {
-    apiKey: "AIzaSyCHAemBi71qB9diMJ9--_IlnCt2mzc3cV4",
-    authDomain: "rk-main-c7124.firebaseapp.com",
-    projectId: "rk-main-c7124",
-    storageBucket: "rk-main-c7124.firebasestorage.app",
-    messagingSenderId: "31301974162",
-    appId: "1:31301974162:web:c5ef6cd84e3e7ff2928e4b"
-};
+// Import the hidden config object at the very top
+import firebaseConfig from './config.js';
 
+// Initialize Firebase using the imported config
 firebase.initializeApp(firebaseConfig);
+
 const auth = firebase.auth();
 const db = firebase.firestore();
+
 
 // In-memory copy of the data, kept fresh by Firestore listeners.
 const store = {
