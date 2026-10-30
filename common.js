@@ -751,7 +751,7 @@ function orderProductViaWhatsApp(productId) {
         `- Options: ${options.length ? options.join(', ') : 'None'}`,
         `Link: ${window.location.href}`
     ].join('\n');
-    const whatsappUrl = `https://wa.me/260768201389?text=${encodeURIComponent(message)}`;
+    const whatsappUrl = `https://wa.me/260961005957?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
 }
 
@@ -926,7 +926,7 @@ function formatCartWhatsAppMessage(order) {
         '-------------------------',
         `💰 *Total Amount:* ${money(order.total)}`,
         '',
-        'Please confirm my order!'
+        'Please confirm these products are available.'
     ].join('\n');
 }
 
@@ -979,7 +979,7 @@ async function saveCategories(categories, variantCategories = getVariantCategori
         return true;
     } catch (error) {
         console.error(error);
-        alert('Categories could not be saved. Check your connection and admin access.');
+        alert('Categories could not be saved. Check your connection.');
         return false;
     }
 }
@@ -1198,7 +1198,7 @@ async function saveNewProduct(event) {
     } catch (error) {
         console.error(error);
         alert(error.code
-            ? 'Product could not be saved. Check your connection and that you are signed in as an admin.'
+            ? 'Product could not be saved. Check your connection.'
             : error.message);
         return;
     } finally {
@@ -1214,7 +1214,7 @@ async function deleteProduct(id) {
         await db.collection('products').doc(String(id)).delete();
     } catch (error) {
         console.error(error);
-        alert('Product could not be deleted. Check your connection and admin access.');
+        alert('Product could not be deleted. Check your connection.');
         return;
     }
     renderAdmin('inventory');
