@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#10100e">
+    <title>RK General Dealers</title>
+    <link rel="stylesheet" href="styles.css?v=10">
+</head>
+<body>
+    <nav>
+        <div class="container">
+            <a href="#/home" class="logo">RK General Dealers</a>
+            <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false" aria-controls="primary-navigation" onclick="toggleMenu()">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="nav-links" id="primary-navigation">
+                <a href="#/home">Shop</a>
+                <a href="#/about">About</a>
+                <a href="#/contact">Contact</a>
+                <div id="auth-links"></div>
+                <a href="#/cart" class="cart-icon">Cart: <span id="cart-count">0</span></a>
+            </div>
+        </div>
+    </nav>
+
+    <main id="app" class="container" aria-live="polite"></main>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>RK General Dealers</h3>
+                    <p>Everyday essentials, selected with care.</p>
+                </div>
+                <div class="footer-section">
+                    <h3>Explore</h3>
+                    <ul>
+                        <li><a href="#/home">Shop</a></li>
+                        <li><a href="#/about">About Us</a></li>
+                        <li><a href="#/contact">Contact</a></li>
+                        <li><a href="#/faq">FAQ</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h3>Information</h3>
+                    <ul>
+                        <li><a href="#/legal?section=privacy">Privacy Policy</a></li>
+                        <li><a href="#/legal?section=terms">Terms of Service</a></li>
+                        <li><a href="#/legal?section=returns">Returns Policy</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 RK General Dealers. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script type="module" src="common.js?v=3"></script>
+</body>
+</html>
