@@ -1,16 +1,6 @@
-/*/ Shared storefront data (Firebase) and cart helpers.
+// Shared storefront data (Firebase) and cart helpers.
 // Products, categories, accounts and orders live in Firebase.
 // The shopping cart stays in this browser's localStorage, as before.
-
-// Import the hidden config object at the very top
-import firebaseConfig from './config.js';
-
-// Initialize Firebase using the imported config
-firebase.initializeApp(firebaseConfig);
-
-const auth = firebase.auth();
-const db = firebase.firestore();*/
-
 
 const firebaseConfig = {
     apiKey: "AIzaSyCHAemBi71qB9diMJ9--_IlnCt2mzc3cV4",
@@ -20,7 +10,7 @@ const firebaseConfig = {
     messagingSenderId: "31301974162",
     appId: "1:31301974162:web:c5ef6cd84e3e7ff2928e4b"
 };
- 
+
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
@@ -29,14 +19,17 @@ const db = firebase.firestore();
 const store = {
     products: [],
     categories: [],
-    variantCategories: [],   // categories whose products need size & color
+    sizeCategories: [],      // categories whose products have sizes
+    colorCategories: [],     // categories whose products have colors
     allOrders: [],      // admin only
     myOrders: [],       // signed-in customer's own orders
     recentOrders: {},   // orders placed in this session (guests can't read them back)
-    user: null          // { uid, name, email, isAdmin }
+    user: null,         // { uid, name, email, isAdmin }
+    loadError: false    // true when the product list could not be loaded
 };
 
 let appReady = false;
+let authSettled = false;
 let registering = false;
 let syncCounter = 0;
 let stopOrdersListener = () => {};
@@ -54,7 +47,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // ---------- Data access ----------
 function getProducts() { return store.products; }
 function getSavedCategories() { return store.categories; }
-function getVariantCategories() { return store.variantCategories; }
+function getSizeCategories() { return store.sizeCategories; }
+function getColorCategories() { return store.colorCategories; }
 function getCurrentUser() { return store.user; }
 function getAllOrders() { return store.allOrders; }
 function getMyOrders() { return store.myOrders; }
@@ -70,7 +64,7 @@ function rememberOrder(order) {
 }
 
 // ---------- Firestore listeners ----------
-function listen(query, onData) {
+function listen(query, onData, onError) {
     let unsubscribe = () => {};
     const ready = new Promise(resolve => {
         let first = true;
@@ -86,6 +80,7 @@ function listen(query, onData) {
             },
             error => {
                 console.error('Firestore listener error:', error);
+                if (onError) onError(error);
                 if (first) {
                     first = false;
                     resolve();
@@ -97,15 +92,21 @@ function listen(query, onData) {
 }
 
 const productsListener = listen(db.collection('products'), snapshot => {
+    store.loadError = false;
     store.products = snapshot.docs
         .map(doc => doc.data())
         .sort((a, b) => Number(a.id) - Number(b.id));
+}, () => {
+    store.loadError = true;
 });
 
 const categoriesListener = listen(db.doc('meta/categories'), snapshot => {
     const data = snapshot.exists ? snapshot.data() : {};
     store.categories = Array.isArray(data.list) ? data.list : [];
-    store.variantCategories = Array.isArray(data.variantCategories) ? data.variantCategories : [];
+    // Older data had one combined list that meant "needs size and color".
+    const legacy = Array.isArray(data.variantCategories) ? data.variantCategories : [];
+    store.sizeCategories = Array.isArray(data.sizeCategories) ? data.sizeCategories : legacy;
+    store.colorCategories = Array.isArray(data.colorCategories) ? data.colorCategories : legacy;
 });
 
 // ---------- Auth ----------
@@ -162,14 +163,16 @@ const authReady = new Promise(resolve => {
     auth.onAuthStateChanged(async fbUser => {
         if (registering) return; // handleRegister signs the new account out itself
         await syncUser(fbUser);
+        authSettled = true;
         resolve();
         if (appReady && typeof renderPage === 'function') renderPage();
     });
 });
 
-// Resolves once the first page can be drawn (or after 10 s, so the site never hangs on a blank screen).
+// The shop waits only for the product list, never for login, so visitors who are not
+// logged in see the goods straight away. (After 10 s at most the page is drawn anyway.)
 const dataReady = Promise.race([
-    Promise.all([productsListener.ready, categoriesListener.ready, authReady]),
+    Promise.all([productsListener.ready, categoriesListener.ready]),
     new Promise(resolve => setTimeout(() => {
         console.warn('Firebase is slow to respond; showing the shop with what has loaded.');
         resolve();
@@ -237,6 +240,35 @@ function addToCart(productId, quantity = 1, options = {}) {
 
     saveCart(cart);
     return true;
+}
+
+// ---------- Bulk pricing ----------
+// A product can have a lower "bulk price" that applies when the cart holds at least
+// `bulkMinQty` of it (all colors and sizes of that product are counted together).
+function hasBulk(product) {
+    if (!product || product.bulkPrice === undefined || product.bulkPrice === null) return false;
+    const bulkPrice = Number(product.bulkPrice);
+    const minQty = Number(product.bulkMinQty);
+    return Number.isFinite(bulkPrice) && bulkPrice >= 0 && bulkPrice < Number(product.price)
+        && Number.isFinite(minQty) && minQty >= 2;
+}
+
+function cartQuantityFor(productId, cart = getCart()) {
+    return cart
+        .filter(item => Number(item.id) === Number(productId))
+        .reduce((total, item) => total + (Number(item.quantity) || 0), 0);
+}
+
+function bulkApplies(item, cart = getCart()) {
+    return hasBulk(item) && cartQuantityFor(item.id, cart) >= Number(item.bulkMinQty);
+}
+
+function cartUnitPrice(item, cart = getCart()) {
+    return bulkApplies(item, cart) ? Number(item.bulkPrice) : (Number(item.price) || 0);
+}
+
+function cartTotal(cart = getCart()) {
+    return cart.reduce((sum, item) => sum + cartUnitPrice(item, cart) * (Number(item.quantity) || 0), 0);
 }
 
 function updateCartCount() {
@@ -345,7 +377,7 @@ function productCard(product) {
     return `<article class="product-card">
         <div class="product-image"><a href="#/product?id=${encodeURIComponent(product.id)}"><img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}"></a></div>
         <div class="product-info">
-            <div><h3 class="product-title">${escapeHtml(product.name)}</h3><p class="product-price">${formatMoney(product.price)}</p></div>
+            <div><h3 class="product-title">${escapeHtml(product.name)}</h3><p class="product-price">${formatMoney(product.price)}</p>${bulkLineMarkup(product)}</div>
             <button class="btn btn-full${inCart ? ' is-added' : ''}" data-cart-id="${Number(product.id)}" data-original-text="${idleText}" onclick="addToCartFromButton(${Number(product.id)})">${inCart ? 'Added to Cart ✓' : idleText}</button>
         </div>
     </article>`;
@@ -366,6 +398,23 @@ function renderProductOptions(product) {
     }).join('');
 }
 
+function bulkLineMarkup(product) {
+    return hasBulk(product)
+        ? `<p class="product-bulk">${formatMoney(product.bulkPrice)} each for ${Number(product.bulkMinQty)}+</p>`
+        : '';
+}
+
+// Products grouped by category: one grid per category, in category order, with no headings.
+function productSectionsMarkup(products) {
+    const names = getCategories(products);
+    const groups = names
+        .map(name => products.filter(product => product.category === name))
+        .filter(group => group.length);
+    const uncategorized = products.filter(product => !product.category);
+    if (uncategorized.length) groups.push(uncategorized);
+    return groups.map(group => `<div class="category-section"><div class="product-grid">${group.map(productCard).join('')}</div></div>`).join('');
+}
+
 function renderHome() {
     const products = getProducts();
     app.innerHTML = `<header class="hero">
@@ -382,7 +431,7 @@ function renderHome() {
     </div>
     <section class="shop-section">
         <h2 class="section-title">Our Products</h2>
-        <div class="product-grid">${products.length ? products.map(productCard).join('') : '<p>No products available yet.</p>'}</div>
+        ${products.length ? productSectionsMarkup(products) : `<p>${store.loadError ? 'Products could not be loaded right now. Please check your connection and refresh the page.' : 'No products available yet.'}</p>`}
     </section>`;
 }
 
@@ -393,7 +442,7 @@ function renderSearch() {
     const matches = products.filter(product => [product.name, product.category, product.description]
         .some(value => String(value || '').toLowerCase().includes(normalizedQuery)));
     app.innerHTML = `<h1 class="section-title mt-20">Search results for "${escapeHtml(query)}"</h1>
-        <div class="product-grid">${matches.map(productCard).join('')}</div>
+        ${productSectionsMarkup(matches)}
         ${matches.length ? '' : '<div class="text-center empty-state"><h2>No products found matching your search.</h2><a href="#/home" class="btn mt-20">View All Products</a></div>'}`;
 }
 
@@ -429,6 +478,7 @@ function renderProduct() {
             <p class="eyebrow">${escapeHtml(product.category)}</p>
             <h1>${escapeHtml(product.name)}</h1>
             <p class="detail-price">${formatMoney(product.price)}</p>
+            ${hasBulk(product) ? `<p class="detail-bulk">Buy ${Number(product.bulkMinQty)} or more: <strong>${formatMoney(product.bulkPrice)}</strong> each</p>` : ''}
             <p class="detail-desc">${escapeHtml(product.description || 'No description available.')}</p>
             <div class="product-options">${renderProductOptions(product)}</div>
             <div class="detail-actions"><label for="product-qty">Quantity</label><input type="number" id="product-qty" value="1" min="1"><button class="btn${inCart ? ' is-added' : ''}" data-cart-id="${productId}" data-original-text="Add to Cart" onclick="addProductQuantity(${productId})">${inCart ? 'Added to Cart ✓' : 'Add to Cart'}</button><button class="btn btn-outline whatsapp-order-button" onclick="orderProductViaWhatsApp(${productId})">Order via WhatsApp</button></div>
@@ -472,7 +522,7 @@ function renderCart() {
         app.innerHTML = '<div class="text-center empty-state"><h1>Your cart is empty.</h1><a href="#/home" class="btn mt-20">Go Shopping</a></div>';
         return;
     }
-    const total = cart.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
+    const total = cartTotal(cart);
     app.innerHTML = `<h1 class="section-title mt-20">Shopping Cart</h1>
         <div class="cart-list">
             ${cart.map((item, index) => {
@@ -482,14 +532,14 @@ function renderCart() {
                 const color = String(Object.entries(item.options || {})
                     .find(([name]) => name.toLowerCase() === 'color')?.[1] || '').trim();
                 const quantity = Math.max(1, Number.parseInt(item.quantity, 10) || 1);
-                const unitPrice = Number(item.price) || 0;
+                const unitPrice = cartUnitPrice(item, cart);
                 return `<article class="cart-row">
                     <div class="cart-row-main">
                         <div class="cart-product">
                             <img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" class="cart-product-image">
                             <div class="cart-product-details">
                                 <h2 class="cart-product-name">${escapeHtml(item.name)}</h2>
-                                <p class="cart-unit-price">${formatMoney(unitPrice)} <span>each</span></p>
+                                <p class="cart-unit-price">${formatMoney(unitPrice)} <span>each</span>${bulkApplies(item, cart) ? ' <span class="bulk-tag">Bulk price</span>' : ''}</p>
                             </div>
                         </div>
                         <div class="cart-row-actions">
@@ -521,13 +571,13 @@ function renderCheckout() {
         location.hash = '#/home';
         return;
     }
-    const total = cart.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
+    const total = cartTotal(cart);
     app.innerHTML = `<h1 class="section-title mt-20">Checkout</h1>
         <div class="checkout-grid whatsapp-checkout-grid"><section class="checkout-section">
             <h2>Order Summary</h2>
             ${cart.map(item => {
                 const options = Object.entries(item.options || {}).map(([name, value]) => `${name}: ${value}`).join(', ');
-                return `<div class="order-summary-item"><span>${escapeHtml(item.name)} × ${Number(item.quantity)}${options ? `<small class="order-options">${escapeHtml(options)}</small>` : ''}</span><span>${formatMoney(Number(item.price) * Number(item.quantity))}</span></div>`;
+                return `<div class="order-summary-item"><span>${escapeHtml(item.name)} × ${Number(item.quantity)}${options ? `<small class="order-options">${escapeHtml(options)}</small>` : ''}</span><span>${formatMoney(cartUnitPrice(item, cart) * Number(item.quantity))}</span></div>`;
             }).join('')}
             <div class="summary-total summary-row"><span>Total</span><span>${formatMoney(total)}</span></div>
             <p class="payment-note">You'll confirm delivery and payment details with the admin on WhatsApp. No payment information is collected on this website.</p>
@@ -539,7 +589,7 @@ function renderCheckout() {
 function renderOrderSuccess() {
     const orderId = routeInfo().params.get('id') || '';
     const order = getOrderById(orderId);
-    const whatsappUrl = order ? `https://wa.me/260961005957?text=${encodeURIComponent(formatOrderMessage(order))}` : '';
+    const whatsappUrl = order ? `https://wa.me/260768201389?text=${encodeURIComponent(formatOrderMessage(order))}` : '';
     app.innerHTML = `<div class="text-center empty-state"><div class="success-mark" aria-hidden="true">✓</div><h1>Order Confirmed!</h1>
         <p class="mb-20">Thank you for your purchase. Your order <strong>${escapeHtml(orderId)}</strong> is being processed.</p><p>Your order details are saved in the admin dashboard.</p>
         ${whatsappUrl ? `<p class="whatsapp-note">Continue to WhatsApp to share your order with the admin. You will need to press Send in WhatsApp.</p><a class="btn whatsapp-button" href="${whatsappUrl}" target="_blank" rel="noopener noreferrer">Share Order on WhatsApp</a>` : ''}
@@ -637,33 +687,188 @@ function renderAdmin(tab = 'overview') {
                 <form class="category-form" onsubmit="addCategory(event)">
                     <label class="sr-only" for="new-category">New category name</label>
                     <input id="new-category" placeholder="New category name" maxlength="40" required>
-                    <label class="category-variant-check"><input type="checkbox" id="new-category-variants"> Needs size &amp; color</label>
+                    <label class="category-variant-check"><input type="checkbox" id="new-category-size"> Needs size</label>
+                    <label class="category-variant-check"><input type="checkbox" id="new-category-color"> Needs color</label>
                     <button class="btn" type="submit">Add Category</button>
                 </form>
-                <ul class="category-list">${categories.map(category => { const needs = categoryNeedsVariants(category); return `<li><span>${escapeHtml(category)}</span><button type="button" class="category-toggle${needs ? ' is-on' : ''}" aria-pressed="${needs}" aria-label="Size and color for ${escapeHtml(category)}: ${needs ? 'on' : 'off'}" data-category="${escapeHtml(category)}" onclick="toggleCategoryVariants(this)">Size &amp; color: ${needs ? 'On' : 'Off'}</button><button type="button" class="remove-btn" aria-label="Remove ${escapeHtml(category)} category" data-category="${escapeHtml(category)}" onclick="removeCategory(this)">Remove</button></li>`; }).join('')}</ul>
+                <ul class="category-list">${categories.map(category => `<li><span>${escapeHtml(category)}</span>${[['size', 'Size', categoryNeedsSize(category)], ['color', 'Color', categoryNeedsColor(category)]].map(([option, label, on]) => `<button type="button" class="category-toggle${on ? ' is-on' : ''}" aria-pressed="${on}" aria-label="${label} option for ${escapeHtml(category)}: ${on ? 'on' : 'off'}" data-category="${escapeHtml(category)}" data-option="${option}" onclick="toggleCategoryOption(this)">${label}: ${on ? 'On' : 'Off'}</button>`).join('')}<button type="button" class="remove-btn" aria-label="Remove ${escapeHtml(category)} category" data-category="${escapeHtml(category)}" onclick="removeCategory(this)">Remove</button></li>`).join('')}</ul>
             </section>
-            <div class="table-wrap"><table><thead><tr><th>ID</th><th>Photo</th><th>Product</th><th>Category</th><th>Price</th><th>Actions</th></tr></thead><tbody>${products.map(product => `<tr><td>${Number(product.id)}</td><td><img class="inventory-thumb" src="${escapeHtml(product.image)}" alt=""></td><td>${escapeHtml(product.name)}</td><td>${escapeHtml(product.category)}</td><td>${formatMoney(product.price)}</td><td><div class="inventory-actions"><button class="btn btn-outline btn-small" onclick="openProductModal(${Number(product.id)})">Edit</button><button class="remove-btn" onclick="deleteProduct(${Number(product.id)})">Delete</button></div></td></tr>`).join('')}</tbody></table></div>`;
+            <div class="table-wrap"><table><thead><tr><th>ID</th><th>Photo</th><th>Product</th><th>Category</th><th>Price</th><th>Actions</th></tr></thead><tbody>${products.map(product => `<tr><td>${Number(product.id)}</td><td><img class="inventory-thumb" src="${escapeHtml(product.image)}" alt=""></td><td>${escapeHtml(product.name)}</td><td>${escapeHtml(product.category)}</td><td>${formatMoney(product.price)}${hasBulk(product) ? `<br><small>${formatMoney(product.bulkPrice)} for ${Number(product.bulkMinQty)}+</small>` : ''}</td><td><div class="inventory-actions"><button class="btn btn-outline btn-small" onclick="openProductModal(${Number(product.id)})">Edit</button><button class="remove-btn" onclick="deleteProduct(${Number(product.id)})">Delete</button></div></td></tr>`).join('')}</tbody></table></div>`;
+    } else if (tab === 'reports') {
+        content = reportsMarkup(orders);
     } else {
-        content = `<h2 class="mb-20">Order Tracking</h2><div class="table-wrap"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Email</th><th>Delivery Address</th><th>Items</th><th>Date</th><th>Total</th></tr></thead><tbody>${[...orders].reverse().map(order => `<tr><td>${escapeHtml(order.id)}</td><td>${escapeHtml(order.customer)}</td><td>${escapeHtml(order.email)}</td><td>${escapeHtml(order.address)}, ${escapeHtml(order.city)} ${escapeHtml(order.zip)}</td><td>${order.items.map(item => { const details = Object.entries(item.options || {}).map(([name, value]) => `${name}: ${value}`).join(', '); return `${escapeHtml(item.name)} × ${Number(item.quantity)}${details ? ` <small>(${escapeHtml(details)})</small>` : ''}`; }).join('<br>')}</td><td>${escapeHtml(order.date)}</td><td>${formatMoney(order.total)}</td></tr>`).join('')}</tbody></table></div>`;
+        content = orderTrackingMarkup(orders);
     }
     app.innerHTML = `<div class="admin-page">
         <nav class="admin-tabs" aria-label="Admin sections">
             <button type="button" class="admin-tab ${tab === 'overview' ? 'active' : ''}" aria-current="${tab === 'overview' ? 'page' : 'false'}" onclick="renderAdmin('overview')">Overview</button>
             <button type="button" class="admin-tab ${tab === 'inventory' ? 'active' : ''}" aria-current="${tab === 'inventory' ? 'page' : 'false'}" onclick="renderAdmin('inventory')">Inventory</button>
             <button type="button" class="admin-tab ${tab === 'orders' ? 'active' : ''}" aria-current="${tab === 'orders' ? 'page' : 'false'}" onclick="renderAdmin('orders')">Orders</button>
+            <button type="button" class="admin-tab ${tab === 'reports' ? 'active' : ''}" aria-current="${tab === 'reports' ? 'page' : 'false'}" onclick="renderAdmin('reports')">Reports</button>
         </nav>
         <section>${content}</section>
     </div>
     <div id="product-modal" class="modal" hidden><div class="form-container modal-content"><h2 class="mb-20" id="product-modal-title">Add New Product</h2><form id="product-form" onsubmit="saveNewProduct(event)">
         <input id="p-id" type="hidden">
         <div class="form-group"><label for="p-name">Name</label><input id="p-name" required></div><div class="form-group"><label for="p-price">Price (K)</label><input id="p-price" type="number" min="0" step="0.01" required></div>
+        <div class="form-group"><label for="p-bulk-price">Bulk price (K) <small>(optional)</small></label><input id="p-bulk-price" type="number" min="0" step="0.01"><small class="form-hint">A lower price per item, shown on the product card. Must be less than the normal price.</small></div>
+        <div class="form-group"><label for="p-bulk-qty">Bulk price applies from this quantity</label><input id="p-bulk-qty" type="number" min="2" step="1" placeholder="e.g. 5"><small class="form-hint">The bulk price is used when a customer orders this many or more of the product (all colors and sizes together). Leave both bulk fields empty for no bulk price.</small></div>
         <div class="form-group"><label for="p-image">Product photos</label><input id="p-image" type="file" accept="image/*" multiple onchange="addProductPhotos(event)"><small class="form-hint">Add up to 7 photos, each up to 2 MB. The first photo is the main photo shown in the shop.</small><div id="product-photo-list" class="photo-list"></div></div><div class="form-group"><label for="p-category">Category</label><select id="p-category" onchange="syncVariantFields()">${categories.map(category => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('')}</select></div>
-        <div id="variant-fields" hidden>
-            <div class="form-group"><label for="p-colors">Colors</label><input id="p-colors" placeholder="e.g. Black, White, Brown"><small class="form-hint">Separate colors with commas.</small></div>
-            <div class="form-group"><label for="p-sizes">Sizes</label><input id="p-sizes" placeholder="e.g. 38, 39, 40, 41"><small class="form-hint">Separate sizes with commas.</small></div>
-        </div>
+        <div id="color-field" hidden><div class="form-group"><label for="p-colors">Colors</label><input id="p-colors" placeholder="e.g. Black, White, Brown"><small class="form-hint">Separate colors with commas.</small></div></div>
+        <div id="size-field" hidden><div class="form-group"><label for="p-sizes">Sizes</label><input id="p-sizes" placeholder="e.g. 38, 39, 40, 41"><small class="form-hint">Separate sizes with commas.</small></div></div>
         <div class="form-group"><label for="p-desc">Description</label><textarea id="p-desc"></textarea></div><div class="modal-actions"><button type="submit" class="btn" id="product-save-button">Save Product</button><button type="button" class="btn btn-outline" onclick="closeProductModal()">Cancel</button></div>
     </form></div></div>`;
+}
+
+// How many units of an order item were sold / unavailable / still unmarked.
+// (Orders marked with the earlier single Sold/Unavailable choice are understood too.)
+function itemSplit(item) {
+    const quantity = Number(item.quantity) || 0;
+    if (item.soldQty !== undefined || item.unavailableQty !== undefined) {
+        const sold = Math.min(quantity, Math.max(0, Number(item.soldQty) || 0));
+        const unavailable = Math.min(quantity - sold, Math.max(0, Number(item.unavailableQty) || 0));
+        return { sold, unavailable, pending: quantity - sold - unavailable };
+    }
+    if (item.result === 'sold') return { sold: quantity, unavailable: 0, pending: 0 };
+    if (item.result === 'unavailable') return { sold: 0, unavailable: quantity, pending: 0 };
+    return { sold: 0, unavailable: 0, pending: quantity };
+}
+
+function itemSplitInputs(order, index) {
+    const item = order.items[index];
+    const quantity = Number(item.quantity) || 0;
+    const { sold, unavailable, pending } = itemSplit(item);
+    const handler = kind => `setItemSplit('${escapeHtml(order.id)}', ${index}, '${kind}', this.value)`;
+    return `<div class="item-split">
+        <label>Sold <input type="number" min="0" max="${quantity}" step="1" value="${sold}" aria-label="Units sold of ${escapeHtml(item.name)}" onchange="${handler('sold')}"></label>
+        <label>Unavailable <input type="number" min="0" max="${quantity}" step="1" value="${unavailable}" aria-label="Units unavailable of ${escapeHtml(item.name)}" onchange="${handler('unavailable')}"></label>
+        <small class="item-pending${pending ? ' has-pending' : ''}">${pending ? `${pending} not marked yet` : 'All marked'}</small>
+    </div>`;
+}
+
+function orderTrackingMarkup(orders) {
+    const rows = [...orders].reverse().map(order => {
+        const items = order.items.map((item, index) => {
+            const details = Object.entries(item.options || {}).map(([name, value]) => `${name}: ${value}`).join(', ');
+            return `<div class="order-item-line"><span>${escapeHtml(item.name)} × ${Number(item.quantity)}${details ? ` <small>(${escapeHtml(details)})</small>` : ''}</span>${itemSplitInputs(order, index)}</div>`;
+        }).join('');
+        return `<tr><td>${escapeHtml(order.id)}</td><td>${escapeHtml(order.customer)}</td><td>${escapeHtml(order.email)}</td><td>${escapeHtml(order.address)}, ${escapeHtml(order.city)} ${escapeHtml(order.zip)}</td>
+            <td>${items}<div class="order-item-bulk"><button type="button" class="btn btn-outline btn-small" onclick="markOrderItems('${escapeHtml(order.id)}', 'sold')">All sold</button> <button type="button" class="btn btn-outline btn-small" onclick="markOrderItems('${escapeHtml(order.id)}', 'unavailable')">All unavailable</button></div></td>
+            <td>${escapeHtml(order.date)}</td><td>${formatMoney(order.total)}</td></tr>`;
+    }).join('');
+    return `<h2 class="mb-20">Order Tracking</h2>
+        <p class="form-hint mb-20">For each item, enter how many units were sold and how many were unavailable (they can add up to at most the quantity ordered). These numbers feed the monthly report.</p>
+        <div class="table-wrap"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Email</th><th>Delivery Address</th><th>Items</th><th>Date</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+async function saveOrderItems(order, items) {
+    try {
+        await db.collection('orders').doc(order.id).update({ items, reportedAtMs: Date.now() });
+    } catch (error) {
+        console.error(error);
+        alert('The order could not be updated. Check your connection and admin access.');
+    }
+    renderAdmin('orders');
+}
+
+function withSplit(item, split) {
+    const { result, ...rest } = item;
+    return { ...rest, soldQty: split.sold, unavailableQty: split.unavailable };
+}
+
+async function setItemSplit(orderId, index, kind, value) {
+    const order = getAllOrders().find(entry => entry.id === orderId);
+    if (!order) return;
+    const item = order.items[index];
+    const quantity = Number(item.quantity) || 0;
+    const current = itemSplit(item);
+    let amount = Math.floor(Number(value));
+    if (!Number.isFinite(amount) || amount < 0) amount = 0;
+    const other = kind === 'sold' ? current.unavailable : current.sold;
+    if (amount + other > quantity) {
+        alert(`Only ${quantity} ordered, so Sold and Unavailable can add up to at most ${quantity}.`);
+        renderAdmin('orders');
+        return;
+    }
+    const split = kind === 'sold' ? { sold: amount, unavailable: other } : { sold: other, unavailable: amount };
+    await saveOrderItems(order, order.items.map((entry, position) => position === index ? withSplit(entry, split) : entry));
+}
+
+async function markOrderItems(orderId, result) {
+    const order = getAllOrders().find(entry => entry.id === orderId);
+    if (!order) return;
+    await saveOrderItems(order, order.items.map(entry => {
+        const quantity = Number(entry.quantity) || 0;
+        return withSplit(entry, result === 'sold' ? { sold: quantity, unavailable: 0 } : { sold: 0, unavailable: quantity });
+    }));
+}
+
+let reportMonth = '';
+
+function monthKeyOf(order) {
+    const date = new Date(Number(order.createdAtMs) || Date.now());
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabel(key) {
+    const [year, month] = key.split('-').map(Number);
+    return new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+}
+
+// Adds up what was sold (made), what was unavailable (lost) and what is not marked yet.
+function summarizeOrders(orders) {
+    const summary = { made: 0, lost: 0, pending: 0, madeQty: 0, lostQty: 0, pendingQty: 0, rows: new Map() };
+    orders.forEach(order => (order.items || []).forEach(item => {
+        const price = Number(item.price) || 0;
+        const { sold, unavailable, pending } = itemSplit(item);
+        const key = String(item.id ?? item.name);
+        const row = summary.rows.get(key) || { name: item.name, soldQty: 0, sold: 0, lostQty: 0, lost: 0, pendingQty: 0, pending: 0 };
+        summary.made += price * sold; summary.madeQty += sold; row.sold += price * sold; row.soldQty += sold;
+        summary.lost += price * unavailable; summary.lostQty += unavailable; row.lost += price * unavailable; row.lostQty += unavailable;
+        summary.pending += price * pending; summary.pendingQty += pending; row.pending += price * pending; row.pendingQty += pending;
+        summary.rows.set(key, row);
+    }));
+    return summary;
+}
+
+function setReportMonth(value) {
+    reportMonth = value;
+    renderAdmin('reports');
+}
+
+function reportsMarkup(orders) {
+    const currentKey = monthKeyOf({ createdAtMs: Date.now() });
+    if (!reportMonth) reportMonth = currentKey;
+    const byMonth = new Map([[currentKey, []]]);
+    orders.forEach(order => {
+        const key = monthKeyOf(order);
+        if (!byMonth.has(key)) byMonth.set(key, []);
+        byMonth.get(key).push(order);
+    });
+    if (!byMonth.has(reportMonth)) byMonth.set(reportMonth, []);
+    const keys = [...byMonth.keys()].sort().reverse();
+    const monthOrders = byMonth.get(reportMonth);
+    const summary = summarizeOrders(monthOrders);
+    const productRows = [...summary.rows.values()].sort((a, b) => b.sold - a.sold || b.lost - a.lost);
+    const history = keys.map(key => {
+        const monthSummary = summarizeOrders(byMonth.get(key));
+        return `<tr><td>${escapeHtml(monthLabel(key))}${key === currentKey ? ' <small>(this month)</small>' : ''}</td><td>${byMonth.get(key).length}</td><td class="text-made">${formatMoney(monthSummary.made)}</td><td class="text-lost">${formatMoney(monthSummary.lost)}</td><td>${formatMoney(monthSummary.pending)}</td><td><button type="button" class="btn btn-outline btn-small" onclick="setReportMonth('${key}')">View</button></td></tr>`;
+    }).join('');
+    return `<h2 class="mb-20">Sales Report</h2>
+        <div class="report-controls"><label for="report-month">Month</label>
+            <select id="report-month" onchange="setReportMonth(this.value)">${keys.map(key => `<option value="${key}"${key === reportMonth ? ' selected' : ''}>${escapeHtml(monthLabel(key))}</option>`).join('')}</select>
+        </div>
+        <div class="stats-grid report-stats">
+            <div class="stat-card"><p>Made (sold)</p><div class="stat-val text-made">${formatMoney(summary.made)}</div><small>${summary.madeQty} item${summary.madeQty === 1 ? '' : 's'}</small></div>
+            <div class="stat-card"><p>Lost (unavailable)</p><div class="stat-val text-lost">${formatMoney(summary.lost)}</div><small>${summary.lostQty} item${summary.lostQty === 1 ? '' : 's'}</small></div>
+            <div class="stat-card"><p>Not marked yet</p><div class="stat-val">${formatMoney(summary.pending)}</div><small>${summary.pendingQty} item${summary.pendingQty === 1 ? '' : 's'}</small></div>
+            <div class="stat-card"><p>Orders</p><div class="stat-val">${monthOrders.length}</div></div>
+        </div>
+        ${summary.pendingQty ? '<p class="form-hint mb-20">Items still Pending are not counted as made or lost. Mark them in the Orders tab.</p>' : ''}
+        <h3 class="mb-20">By product</h3>
+        ${productRows.length ? `<div class="table-wrap"><table><thead><tr><th>Product</th><th>Sold</th><th>Made</th><th>Unavailable</th><th>Lost</th><th>Pending</th></tr></thead><tbody>${productRows.map(row => `<tr><td>${escapeHtml(row.name)}</td><td>${row.soldQty}</td><td class="text-made">${formatMoney(row.sold)}</td><td>${row.lostQty}</td><td class="text-lost">${formatMoney(row.lost)}</td><td>${row.pendingQty}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mb-20">No orders in this month.</p>'}
+        <h3 class="mb-20 mt-20">All months</h3>
+        <div class="table-wrap"><table><thead><tr><th>Month</th><th>Orders</th><th>Made</th><th>Lost</th><th>Not marked</th><th></th></tr></thead><tbody>${history}</tbody></table></div>`;
 }
 
 function renderPage() {
@@ -673,7 +878,12 @@ function renderPage() {
     const user = getCurrentUser();
     document.getElementById('auth-links').innerHTML = user
         ? `<a href="#/dashboard">Profile</a> ${user.isAdmin ? '<a href="#/admin">Admin</a>' : ''} <a href="#/home" onclick="logout()">Logout</a>`
-        : '<a href="#/login">Login</a> <a href="#/register">Register</a>';
+        : (authSettled ? '<a href="#/login">Login</a> <a href="#/register">Register</a>' : '');
+    // Account pages need to know who is logged in; everything else can show straight away.
+    if (!authSettled && ['dashboard', 'admin'].includes(page)) {
+        app.innerHTML = '<p class="text-center mt-20">Loading…</p>';
+        return;
+    }
     const pages = {
         home: renderHome, search: renderSearch, product: renderProduct, login: renderLogin,
         register: renderRegister, 'forgot-password': renderForgotPassword, cart: renderCart,
@@ -752,16 +962,17 @@ function orderProductViaWhatsApp(productId) {
     if (!selected) return;
     const quantity = Math.max(1, Number.parseInt(document.getElementById('product-qty')?.value, 10) || 1);
     const options = Object.entries(selected).map(([name, value]) => `${name}: ${value}`);
+    const unitPrice = hasBulk(product) && quantity >= Number(product.bulkMinQty) ? Number(product.bulkPrice) : Number(product.price);
     const sku = product.sku || product.id;
     const message = [
         'Hello! I would like to order:',
         `- Product: ${product.name}`,
         `- SKU: ${sku}`,
-        `- Price: ${formatMoney(product.price)}${quantity > 1 ? ` x ${quantity} = ${formatMoney(Number(product.price) * quantity)}` : ''}`,
+        `- Price: ${formatMoney(unitPrice)}${quantity > 1 ? ` x ${quantity} = ${formatMoney(unitPrice * quantity)}` : ''}`,
         `- Options: ${options.length ? options.join(', ') : 'None'}`,
         `Link: ${window.location.href}`
     ].join('\n');
-    const whatsappUrl = `https://wa.me/260961005957?text=${encodeURIComponent(message)}`;
+    const whatsappUrl = `https://wa.me/260768201389?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
 }
 
@@ -871,12 +1082,15 @@ let processingOrder = false;
 
 async function processOrder() {
     if (processingOrder) return;
+    processingOrder = true;
+    // Make sure a logged-in customer is recognised before the order is saved.
+    await Promise.race([authReady, new Promise(resolve => setTimeout(resolve, 3000))]);
     const cart = getCart();
     if (!cart.length) {
+        processingOrder = false;
         location.hash = '#/cart';
         return;
     }
-    processingOrder = true;
     const user = getCurrentUser();
     const order = {
         id: `ORD-${Date.now()}`,
@@ -885,11 +1099,11 @@ async function processOrder() {
         items: cart.map(item => ({
             id: Number(item.id),
             name: String(item.name),
-            price: Number(item.price),
+            price: cartUnitPrice(item, cart),
             quantity: Number(item.quantity),
             options: item.options || {}
         })),
-        total: cart.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0),
+        total: cartTotal(cart),
         status: 'Awaiting WhatsApp confirmation',
         customer: user?.name || 'WhatsApp customer',
         email: user?.email || '',
@@ -909,7 +1123,7 @@ async function processOrder() {
         console.error('Order could not be saved to the database:', error);
     }
     rememberOrder(order);
-    const whatsappUrl = `https://wa.me/260961005957?text=${encodeURIComponent(formatCartWhatsAppMessage(order))}`;
+    const whatsappUrl = `https://wa.me/260768201389?text=${encodeURIComponent(formatCartWhatsAppMessage(order))}`;
     localStorage.removeItem('cart');
     processingOrder = false;
     window.location.assign(whatsappUrl);
@@ -936,7 +1150,7 @@ function formatCartWhatsAppMessage(order) {
         '-------------------------',
         `💰 *Total Amount:* ${money(order.total)}`,
         '',
-        'Please confirm these products are available.'
+        'Please confirm my order!'
     ].join('\n');
 }
 
@@ -976,20 +1190,25 @@ function getCategories(products = getProducts()) {
         .sort((a, b) => a.localeCompare(b));
 }
 
-function categoryNeedsVariants(category) {
-    return getVariantCategories().includes(category);
+function categoryNeedsSize(category) {
+    return getSizeCategories().includes(category);
 }
 
-async function saveCategories(categories, variantCategories = getVariantCategories()) {
+function categoryNeedsColor(category) {
+    return getColorCategories().includes(category);
+}
+
+async function saveCategories(categories, sizeCategories = getSizeCategories(), colorCategories = getColorCategories()) {
     try {
         await db.doc('meta/categories').set({
             list: categories,
-            variantCategories: variantCategories.filter(category => categories.includes(category))
+            sizeCategories: sizeCategories.filter(category => categories.includes(category)),
+            colorCategories: colorCategories.filter(category => categories.includes(category))
         });
         return true;
     } catch (error) {
         console.error(error);
-        alert('Categories could not be saved. Check your connection.');
+        alert('Categories could not be saved. Check your connection and admin access.');
         return false;
     }
 }
@@ -998,22 +1217,39 @@ async function addCategory(event) {
     event.preventDefault();
     const input = document.getElementById('new-category');
     const name = input.value.trim();
-    const needsVariants = document.getElementById('new-category-variants').checked;
     const categories = getCategories();
     if (categories.some(category => category.toLowerCase() === name.toLowerCase())) {
         alert('That category already exists.');
         return;
     }
     categories.push(name);
-    const variantCategories = needsVariants ? [...getVariantCategories(), name] : getVariantCategories();
-    if (await saveCategories(categories, variantCategories)) renderAdmin('inventory');
+    const sizeCategories = document.getElementById('new-category-size').checked ? [...getSizeCategories(), name] : getSizeCategories();
+    const colorCategories = document.getElementById('new-category-color').checked ? [...getColorCategories(), name] : getColorCategories();
+    if (await saveCategories(categories, sizeCategories, colorCategories)) renderAdmin('inventory');
 }
 
-async function toggleCategoryVariants(button) {
+async function toggleCategoryOption(button) {
     const category = button.dataset.category;
-    const current = getVariantCategories();
-    const next = current.includes(category) ? current.filter(item => item !== category) : [...current, category];
-    if (await saveCategories(getCategories(), next)) renderAdmin('inventory');
+    const flip = list => (list.includes(category) ? list.filter(item => item !== category) : [...list, category]);
+    const sizeCategories = button.dataset.option === 'size' ? flip(getSizeCategories()) : getSizeCategories();
+    const colorCategories = button.dataset.option === 'color' ? flip(getColorCategories()) : getColorCategories();
+    if (await saveCategories(getCategories(), sizeCategories, colorCategories)) renderAdmin('inventory');
+}
+
+// Colors and sizes are asked for separately, depending on the product's category.
+function buildProductOptions(category, colorsText, sizesText) {
+    const options = {};
+    if (categoryNeedsColor(category)) {
+        const colors = splitList(colorsText);
+        if (!colors.length) return { error: 'Enter at least one color for this category.' };
+        options.Color = colors;
+    }
+    if (categoryNeedsSize(category)) {
+        const sizes = splitList(sizesText);
+        if (!sizes.length) return { error: 'Enter at least one size for this category.' };
+        options.Size = sizes;
+    }
+    return { options };
 }
 
 async function removeCategory(button) {
@@ -1085,7 +1321,8 @@ async function addProductPhotos(event) {
 
 function syncVariantFields() {
     const category = document.getElementById('p-category').value;
-    document.getElementById('variant-fields').hidden = !categoryNeedsVariants(category);
+    document.getElementById('color-field').hidden = !categoryNeedsColor(category);
+    document.getElementById('size-field').hidden = !categoryNeedsSize(category);
 }
 
 function openProductModal(productId = null) {
@@ -1101,6 +1338,8 @@ function openProductModal(productId = null) {
     document.getElementById('p-id').value = product ? String(product.id) : '';
     document.getElementById('p-name').value = product?.name || '';
     document.getElementById('p-price').value = product?.price ?? '';
+    document.getElementById('p-bulk-price').value = product?.bulkPrice ?? '';
+    document.getElementById('p-bulk-qty').value = product?.bulkMinQty ?? '';
     const categorySelect = document.getElementById('p-category');
     const wantedCategory = product?.category || 'Electronics';
     categorySelect.value = [...categorySelect.options].some(option => option.value === wantedCategory)
@@ -1182,6 +1421,27 @@ async function saveNewProduct(event) {
     const productId = document.getElementById('p-id').value;
     const existingIndex = products.findIndex(product => String(product.id) === productId);
     const category = document.getElementById('p-category').value;
+    const bulkPriceText = document.getElementById('p-bulk-price').value.trim();
+    const bulkQtyText = document.getElementById('p-bulk-qty').value.trim();
+    const normalPrice = Number(document.getElementById('p-price').value);
+    let bulk = null;
+    if (bulkPriceText || bulkQtyText) {
+        const bulkPrice = Number(bulkPriceText);
+        const bulkMinQty = Number(bulkQtyText);
+        if (!bulkPriceText || !bulkQtyText) {
+            alert('Enter both the bulk price and the quantity it applies from, or leave both empty.');
+            return;
+        }
+        if (!(bulkPrice >= 0) || !(bulkPrice < normalPrice)) {
+            alert('The bulk price must be lower than the normal price.');
+            return;
+        }
+        if (!Number.isInteger(bulkMinQty) || bulkMinQty < 2) {
+            alert('The bulk quantity must be a whole number of 2 or more.');
+            return;
+        }
+        bulk = { bulkPrice, bulkMinQty };
+    }
     savingProduct = true;
     try {
         // Older photos saved at a larger size are shrunk so all photos fit in one document.
@@ -1195,20 +1455,18 @@ async function saveNewProduct(event) {
             category,
             description: document.getElementById('p-desc').value.trim()
         };
-        if (categoryNeedsVariants(category)) {
-            const colors = splitList(document.getElementById('p-colors').value);
-            const sizes = splitList(document.getElementById('p-sizes').value);
-            if (!colors.length || !sizes.length) {
-                alert('Enter at least one color and one size for this category.');
-                return;
-            }
-            product.options = { Color: colors, Size: sizes };
+        if (bulk) Object.assign(product, bulk);
+        const built = buildProductOptions(category, document.getElementById('p-colors').value, document.getElementById('p-sizes').value);
+        if (built.error) {
+            alert(built.error);
+            return;
         }
+        if (Object.keys(built.options).length) product.options = built.options;
         await db.collection('products').doc(String(product.id)).set(product);
     } catch (error) {
         console.error(error);
         alert(error.code
-            ? 'Product could not be saved. Check your connection.'
+            ? 'Product could not be saved. Check your connection and that you are signed in as an admin.'
             : error.message);
         return;
     } finally {
@@ -1224,7 +1482,7 @@ async function deleteProduct(id) {
         await db.collection('products').doc(String(id)).delete();
     } catch (error) {
         console.error(error);
-        alert('Product could not be deleted. Check your connection.');
+        alert('Product could not be deleted. Check your connection and admin access.');
         return;
     }
     renderAdmin('inventory');
