@@ -287,7 +287,7 @@ function updateCartCount() {
 // =====================================================================
 
 const app = document.getElementById('app');
-const brand = 'RK General Dealers';
+const brand = 'RK CONNEKT';
 let lastAdminTab = 'overview';
 let lastDashboardTab = 'profile';
 const currency = new Intl.NumberFormat('en-ZM', { maximumFractionDigits: 2 });
@@ -589,7 +589,7 @@ function renderCheckout() {
 function renderOrderSuccess() {
     const orderId = routeInfo().params.get('id') || '';
     const order = getOrderById(orderId);
-    const whatsappUrl = order ? `https://wa.me/260768201389?text=${encodeURIComponent(formatOrderMessage(order))}` : '';
+    const whatsappUrl = order ? `https://wa.me/260 961005957?text=${encodeURIComponent(formatOrderMessage(order))}` : '';
     app.innerHTML = `<div class="text-center empty-state"><div class="success-mark" aria-hidden="true">✓</div><h1>Order Confirmed!</h1>
         <p class="mb-20">Thank you for your purchase. Your order <strong>${escapeHtml(orderId)}</strong> is being processed.</p><p>Your order details are saved in the admin dashboard.</p>
         ${whatsappUrl ? `<p class="whatsapp-note">Continue to WhatsApp to share your order with the admin. You will need to press Send in WhatsApp.</p><a class="btn whatsapp-button" href="${whatsappUrl}" target="_blank" rel="noopener noreferrer">Share Order on WhatsApp</a>` : ''}
@@ -972,7 +972,7 @@ function orderProductViaWhatsApp(productId) {
         `- Options: ${options.length ? options.join(', ') : 'None'}`,
         `Link: ${window.location.href}`
     ].join('\n');
-    const whatsappUrl = `https://wa.me/260768201389?text=${encodeURIComponent(message)}`;
+    const whatsappUrl = `https://wa.me/260961005957?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
 }
 
@@ -1123,7 +1123,7 @@ async function processOrder() {
         console.error('Order could not be saved to the database:', error);
     }
     rememberOrder(order);
-    const whatsappUrl = `https://wa.me/260768201389?text=${encodeURIComponent(formatCartWhatsAppMessage(order))}`;
+    const whatsappUrl = `https://wa.me/260961005957?text=${encodeURIComponent(formatCartWhatsAppMessage(order))}`;
     localStorage.removeItem('cart');
     processingOrder = false;
     window.location.assign(whatsappUrl);
