@@ -1632,3 +1632,121 @@ input:disabled {
     background: var(--accent-orange);
     border-color: var(--accent-orange);
 }
+
+/* ---- Bulk ("order") price ---- */
+.product-bulk {
+    margin-top: 2px;
+    color: #d7d0c6;
+    font-size: .78rem;
+}
+
+.detail-bulk {
+    margin: -4px 0 14px;
+    color: #d7d0c6;
+    font-size: .95rem;
+}
+
+.detail-bulk strong {
+    color: var(--accent-orange);
+}
+
+.cart-unit-price .bulk-tag {
+    padding: 1px 6px;
+    color: #17120d;
+    background: var(--accent-orange);
+    border-radius: 4px;
+    font-size: .68rem;
+    font-weight: 700;
+}
+
+/* ---- Goods grouped by category (no headings) ---- */
+.category-section + .category-section {
+    margin-top: 28px;
+    padding-top: 28px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* ---- Order tracking: sold / unavailable quantities per item ---- */
+.order-item-line {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.order-item-line:first-child {
+    padding-top: 0;
+}
+
+.order-item-bulk {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.item-split {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+
+.item-split label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #d7d0c6;
+    font-size: .82rem;
+}
+
+.item-split input {
+    width: 64px;
+    padding: 5px 8px;
+    color: #f4eee6;
+    background: #292722;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: .85rem;
+}
+
+.item-pending {
+    color: #3fb97a;
+    font-size: .78rem;
+}
+
+.item-pending.has-pending {
+    color: #d7a24a;
+}
+
+/* ---- Sales report ---- */
+.report-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.report-controls select {
+    width: auto;
+    min-width: 180px;
+}
+
+.report-stats .stat-card small {
+    color: #aaa39a;
+}
+
+.text-made {
+    color: #3fb97a;
+}
+
+.text-lost {
+    color: #e5604d;
+}
+
+/* ---- Category pills with separate Size / Color switches ---- */
+.category-list li {
+    flex-wrap: wrap;
+    border-radius: 16px;
+}
