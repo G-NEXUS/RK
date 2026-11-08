@@ -1750,3 +1750,131 @@ input:disabled {
     flex-wrap: wrap;
     border-radius: 16px;
 }
+
+
+/* ---- Placeholder cards shown while the shop loads ---- */
+.skeleton {
+    background: linear-gradient(90deg, #1b1a16 25%, #2a2722 37%, #1b1a16 63%);
+    background-size: 400% 100%;
+    animation: skeleton-shimmer 1.4s ease infinite;
+    border-radius: 6px;
+}
+
+.skeleton-card {
+    pointer-events: none;
+}
+
+.skeleton-image {
+    aspect-ratio: 1;
+    border-radius: 0;
+}
+
+.skeleton-line {
+    height: 14px;
+    margin-bottom: 10px;
+}
+
+.skeleton-line.short {
+    width: 55%;
+}
+
+.skeleton-button {
+    height: 38px;
+    margin-top: 6px;
+}
+
+@keyframes skeleton-shimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+}
+
+/* ---- Home banner: letters appear one by one ---- */
+.animate-letters .word {
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.animate-letters .letter {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(8px);
+    animation: letter-in .45s ease forwards;
+    animation-delay: calc(var(--i) * 30ms);
+}
+
+.hero.is-static .letter {
+    opacity: 1;
+    transform: none;
+    animation: none;
+}
+
+@keyframes letter-in {
+    to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .skeleton { animation: none; }
+    .animate-letters .letter { opacity: 1; transform: none; animation: none !important; }
+}
+
+/* ---- Admin: Contacts ---- */
+.tab-badge {
+    display: inline-block;
+    min-width: 20px;
+    margin-left: 6px;
+    padding: 1px 6px;
+    color: #17120d;
+    background: var(--accent-orange);
+    border-radius: 10px;
+    font-size: .72rem;
+    font-weight: 700;
+    line-height: 1.4;
+    text-align: center;
+}
+
+.contact-card {
+    margin-bottom: 14px;
+    padding: 16px;
+    background: #11100e;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+}
+
+.contact-card.is-unread {
+    border-left: 4px solid var(--accent-orange);
+}
+
+.contact-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.unread-dot {
+    padding: 1px 8px;
+    color: #17120d;
+    background: var(--accent-orange);
+    border-radius: 10px;
+    font-size: .72rem;
+    font-weight: 700;
+}
+
+.contact-meta {
+    margin-bottom: 10px;
+    color: #aaa39a;
+    font-size: .85rem;
+}
+
+.contact-body {
+    margin-bottom: 14px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.contact-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
