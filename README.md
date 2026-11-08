@@ -1,15 +1,45 @@
-# RK General Dealers
+# RK CONNEKT
 
-The storefront is a single-page app served from `index.html`. Navigation uses hash routes, while `styles.css` contains the black-and-orange theme and `common.js` handles the shared product and cart data.
+The storefront is a single-page app served from `index.html`. Navigation uses hash routes, while `styles.css` contains the black-and-orange theme and `common.js` handles Firebase and the shared product and cart data.
 
-Open `index.html` in a browser to use the shop, account pages, checkout, dashboards, and support pages.
+Prices are displayed in Zambian kwacha (K).
 
-Prices are displayed in Zambian kwacha (K). Admins can add and edit products in Inventory using an uploaded image (up to 2 MB); product data and photos are stored in that browser's local storage.
+## Firebase
 
-Admins can also add categories in Inventory and select them when adding or editing products. Customer accounts open the Profile view after login; the Shop remains the default landing page.
+Products, categories, customer accounts and orders are stored in Firebase (project `rk-main-c7124`):
 
-Demo login accounts:
-- Customer: `customer@rk.com` / `customer123`
-- Admin: `admin@rk.com` / `admin123`
+- **Authentication** (Email/Password) handles register, login and password reset.
+- **Firestore** stores `products`, `meta/categories`, `users` and `orders`. Security rules are in `firestore.rules`; paste them in the Firebase console under Firestore Database > Rules and publish.
+- Each product can have up to 7 photos. They are compressed in the browser (max 800 px) and stored inside the product document. The first photo is the main one; the rest appear as a gallery on the product page.
+- The shopping cart still lives in each visitor's browser (localStorage).
 
-Checkout records orders in this browser's local storage for the admin dashboard and opens a prefilled WhatsApp message to the admin; it does not collect card or payment details. The order message lists each product, quantity, selected options, and the total in kwacha. The customer must press **Send** in WhatsApp. This static demo does not synchronize orders between different devices; shared admin access requires a server-side order store.
+### Making someone an admin
+1. Register the account on the site.
+2. In the Firebase console open Firestore Database > `users` > that user's document.
+3. Set `isAdmin` to `true` (boolean). Admin rights can only be granted here, never from the website.
+
+## Checkout
+Checkout saves the order to Firestore for the admin dashboard and opens a prefilled WhatsApp message to the admin; it does not collect card or payment details. The order message lists each product, quantity, selected options, and the total in kwacha. The customer must press **Send** in WhatsApp.
+
+## Categories with size and color
+In Admin > Inventory, each category has two separate switches: **Size** and **Color** (tick either or both when adding the category, or flip them later). For products in a category, the product form asks only for the options that are switched on (comma-separated lists). On the product page the customer picks those options and a quantity, and can add several combinations; each one is its own line in the cart and in the order.
+
+Whenever `firestore.rules` changes, paste it into the Firebase console (Firestore Database > Rules) and publish.
+
+## Bulk price
+In the product form, **Bulk price** and **Bulk price applies from this quantity** (both optional). The card shows the bulk price in small text under the normal price. When a customer's cart holds at least that many of the product (all colors and sizes together), every unit of it is charged the bulk price in the cart, checkout, WhatsApp message and saved order.
+
+## Shop layout
+Goods are shown in one block per category (no headings), in category order.
+
+## Reports
+In Admin > Orders, for each item enter how many units were **Sold** and how many were **Unavailable** (for example ordered 5: 3 sold, 2 unavailable), or use *All sold* / *All unavailable* for a whole order. The **Reports** tab adds this up per month: *made* (sold items), *lost* (unavailable items) and items not marked yet, with a per-product breakdown and a history of all months. The figures are calculated whenever the tab is opened, so a month's report is complete as soon as the month ends.
+
+## Contact messages
+The Contact page saves each message to Firestore (`messages`). In Admin > **Contacts** the admin sees all messages (newest first) and can mark them read or unread or delete them. The tab shows a badge with the number of unread messages. Visitors do not need to be logged in to send a message.
+
+## Where things live
+`index.html` holds the fixed parts of the site: the header, footer, loading placeholder cards, the footer animation text, and the About, Contact, FAQ, Legal, Login, Register and Reset Password pages (as `<template>` blocks), plus the admin product popup. `common.js` holds only what depends on data or behavior.
+
+## Ordering needs an account
+Visitors can browse and fill a cart without an account, but checkout and *Order via WhatsApp* ask them to log in or register first (and bring them back to what they were doing afterwards). Firestore also refuses orders from logged-out visitors. Anyone who is already logged in is sent straight to their profile (or the admin page) if they open the Login, Register or Reset Password pages.
