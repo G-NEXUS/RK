@@ -23,6 +23,7 @@ const store = {
     colorCategories: [],     // categories whose products have colors
     allOrders: [],      // admin only
     myOrders: [],       // signed-in customer's own orders
+    messages: [],       // contact-form messages (admin only)
     recentOrders: {},   // orders placed in this session (guests can't read them back)
     user: null,         // { uid, name, email, isAdmin }
     loadError: false    // true when the product list could not be loaded
@@ -51,6 +52,7 @@ function getSizeCategories() { return store.sizeCategories; }
 function getColorCategories() { return store.colorCategories; }
 function getCurrentUser() { return store.user; }
 function getAllOrders() { return store.allOrders; }
+function getMessages() { return store.messages; }
 function getMyOrders() { return store.myOrders; }
 
 function getOrderById(id) {
@@ -116,6 +118,7 @@ async function syncUser(fbUser) {
     stopOrdersListener = () => {};
     store.allOrders = [];
     store.myOrders = [];
+    store.messages = [];
 
     if (!fbUser) {
         store.user = null;
@@ -155,8 +158,17 @@ async function syncUser(fbUser) {
         if (store.user?.isAdmin) store.allOrders = orders;
         else store.myOrders = orders;
     });
-    stopOrdersListener = ordersListener.unsubscribe;
+    const stops = [ordersListener.unsubscribe];
+    let messagesListener = null;
+    if (store.user.isAdmin) {
+        messagesListener = listen(db.collection('messages').orderBy('createdAtMs'), snapshot => {
+            store.messages = snapshot.docs.map(doc => doc.data());
+        });
+        stops.push(messagesListener.unsubscribe);
+    }
+    stopOrdersListener = () => stops.forEach(stop => stop());
     await ordersListener.ready;
+    if (messagesListener) await messagesListener.ready;
 }
 
 const authReady = new Promise(resolve => {
@@ -193,6 +205,7 @@ function logout() {
     store.user = null;
     store.allOrders = [];
     store.myOrders = [];
+    store.messages = [];
     stopOrdersListener();
     stopOrdersListener = () => {};
     auth.signOut().catch(error => console.error('Sign out failed:', error));
@@ -287,7 +300,8 @@ function updateCartCount() {
 // =====================================================================
 
 const app = document.getElementById('app');
-const brand = 'RK CONNEKT';
+const loadingMarkup = app.innerHTML; // the placeholder cards written in index.html
+const brand = document.querySelector('.logo').textContent.trim();
 let lastAdminTab = 'overview';
 let lastDashboardTab = 'profile';
 const currency = new Intl.NumberFormat('en-ZM', { maximumFractionDigits: 2 });
@@ -305,19 +319,6 @@ function escapeHtml(value) {
 function routeInfo() {
     const [path = '/home', query = ''] = location.hash.slice(1).split('?');
     return { page: path.replace(/^\/+/, '') || 'home', params: new URLSearchParams(query) };
-}
-
-function passwordField(id, label) {
-    return `<div class="form-group">
-        <label for="${id}">${label}</label>
-        <div class="password-field">
-            <input type="password" id="${id}" required autocomplete="${id === 'login-password' ? 'current-password' : 'new-password'}">
-            <button class="password-toggle" type="button" aria-label="Show ${label.toLowerCase()}" aria-pressed="false" onclick="togglePassword('${id}', this)">
-                <svg class="icon-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
-                <svg class="icon-eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a15.8 15.8 0 0 1-3.1 3.8M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7c1 0 2-.2 2.9-.5"/></svg>
-            </button>
-        </div>
-    </div>`;
 }
 
 function togglePassword(id, button) {
@@ -338,16 +339,9 @@ function toggleMenu(forceClose = false) {
     button.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
 }
 
-function closeAuthForm() {
-    location.hash = '#/home';
-}
-
-function authForm(content) {
-    return `<section class="auth-stage"><div class="form-container auth-form">
-        <button class="auth-close" type="button" aria-label="Close form" onclick="closeAuthForm()">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
-        </button>${content}
-    </div></section>`;
+// Fixed pages live in index.html as <template> blocks; this just shows one.
+function showTemplate(id) {
+    app.replaceChildren(document.getElementById(id).content.cloneNode(true));
 }
 
 function hasOptions(product) {
@@ -415,14 +409,20 @@ function productSectionsMarkup(products) {
     return groups.map(group => `<div class="category-section"><div class="product-grid">${group.map(productCard).join('')}</div></div>`).join('');
 }
 
+// The banner lives in index.html; its letters animate the first time it is drawn,
+// but not again when the shop refreshes itself with new data.
+let heroPlayed = false;
+
+function heroMarkup() {
+    const markup = document.getElementById('tpl-hero').innerHTML;
+    const result = heroPlayed ? markup.replace('class="hero"', 'class="hero is-static"') : markup;
+    heroPlayed = true;
+    return result;
+}
+
 function renderHome() {
     const products = getProducts();
-    app.innerHTML = `<header class="hero">
-        <div class="hero-content">
-            <p class="eyebrow">Good finds. Everyday value.</p>
-            <p>Shop dependable essentials for work, home, and everywhere in between.</p>
-        </div>
-    </header>
+    app.innerHTML = `${heroMarkup()}
     <div class="sticky-search-wrap">
         <form class="search-form" onsubmit="searchProducts(event)">
             <input type="search" id="search-input" placeholder="Search products..." aria-label="Search products">
@@ -485,35 +485,6 @@ function renderProduct() {
             <div id="product-cart-summary" class="product-cart-summary" data-product-id="${productId}">${cartSummaryMarkup(productId)}</div>
         </div>
     </div>`;
-}
-
-function renderLogin() {
-    app.innerHTML = authForm(`<h1 class="text-center mb-20">Welcome Back</h1>
-        <form onsubmit="handleLogin(event)">
-            <div class="form-group"><label for="login-email">Email Address</label><input type="email" id="login-email" autocomplete="email" required></div>
-            ${passwordField('login-password', 'Password')}
-            <p class="text-center mb-20"><a class="text-accent" href="#/forgot-password">Forgot Password?</a></p>
-            <button type="submit" class="btn btn-full">Login</button>
-        </form>
-        <p class="text-center mt-20">Don't have an account? <a class="text-accent" href="#/register">Register here</a></p>`);
-}
-
-function renderRegister() {
-    app.innerHTML = authForm(`<h1 class="text-center mb-20">Create Account</h1>
-        <form onsubmit="handleRegister(event)">
-            <div class="form-group"><label for="reg-name">Full Name</label><input type="text" id="reg-name" autocomplete="name" required></div>
-            <div class="form-group"><label for="reg-email">Email Address</label><input type="email" id="reg-email" autocomplete="email" required></div>
-            ${passwordField('reg-password', 'Password')}
-            <button type="submit" class="btn btn-full">Register</button>
-        </form>
-        <p class="text-center mt-20">Already have an account? <a class="text-accent" href="#/login">Login here</a></p>`);
-}
-
-function renderForgotPassword() {
-    app.innerHTML = authForm(`<h1 class="text-center mb-20">Reset Password</h1>
-        <p class="mb-20 text-center">Enter your email and we'll send you a link to reset your password.</p>
-        <form onsubmit="handlePasswordReset(event)"><div class="form-group"><label for="reset-email">Email Address</label><input type="email" id="reset-email" required></div><button type="submit" class="btn btn-full">Send Reset Link</button></form>
-        <p class="text-center mt-20"><a class="text-accent" href="#/login">Back to Login</a></p>`);
 }
 
 function renderCart() {
@@ -589,47 +560,15 @@ function renderCheckout() {
 function renderOrderSuccess() {
     const orderId = routeInfo().params.get('id') || '';
     const order = getOrderById(orderId);
-    const whatsappUrl = order ? `https://wa.me/260 961005957?text=${encodeURIComponent(formatOrderMessage(order))}` : '';
+    const whatsappUrl = order ? `https://wa.me/260961005957?text=${encodeURIComponent(formatOrderMessage(order))}` : '';
     app.innerHTML = `<div class="text-center empty-state"><div class="success-mark" aria-hidden="true">✓</div><h1>Order Confirmed!</h1>
         <p class="mb-20">Thank you for your purchase. Your order <strong>${escapeHtml(orderId)}</strong> is being processed.</p><p>Your order details are saved in the admin dashboard.</p>
         ${whatsappUrl ? `<p class="whatsapp-note">Continue to WhatsApp to share your order with the admin. You will need to press Send in WhatsApp.</p><a class="btn whatsapp-button" href="${whatsappUrl}" target="_blank" rel="noopener noreferrer">Share Order on WhatsApp</a>` : ''}
         <div class="mt-20"><a href="#/home" class="btn">Continue Shopping</a> <a href="#/dashboard" class="btn btn-outline">View Profile</a></div></div>`;
 }
 
-function renderAbout() {
-    app.innerHTML = `<article class="content-page"><h1 class="section-title">About ${brand}</h1>
-        <p class="mb-20">RK General Dealers is here to make shopping for dependable everyday essentials simple and straightforward.</p>
-        <p class="mb-20">Our collection brings together useful products for home, work, and leisure, with a focus on quality, value, and friendly service.</p>
-        <img class="content-image" src="https://images.unsplash.com/photo-1497366216548-37526070297c?w=1000" alt="A bright, welcoming workspace"></article>`;
-}
-
-function renderContact() {
-    app.innerHTML = `<div class="form-container"><h1 class="section-title">Get in Touch</h1><p class="mb-20">Have a question? We're here to help.</p>
-        <form onsubmit="sendContactMessage(event)">
-            <div class="form-group"><label for="contact-name">Name</label><input id="contact-name" required></div>
-            <div class="form-group"><label for="contact-email">Email</label><input type="email" id="contact-email" required></div>
-            <div class="form-group"><label for="contact-subject">Subject</label><input id="contact-subject" required></div>
-            <div class="form-group"><label for="contact-message">Message</label><textarea id="contact-message" rows="5" required></textarea></div>
-            <button type="submit" class="btn btn-full">Send Message</button>
-        </form></div>`;
-}
-
-function renderFaq() {
-    const questions = [
-        ['How long does shipping take?', 'Domestic shipping typically takes 3-5 business days. International shipping can take 7-14 business days.'],
-        ['What is your return policy?', 'We offer a 30-day return policy for all unused items in their original packaging.'],
-        ['Do you offer international shipping?', 'Yes, we ship to over 50 countries worldwide. Shipping costs will be calculated at checkout.'],
-        ['How can I track my order?', 'Once your order ships, you will receive an email with a tracking number and a link to track your package.']
-    ];
-    app.innerHTML = `<article class="content-page"><h1 class="section-title">Frequently Asked Questions</h1>${questions.map(([question, answer]) => `<section class="faq-item"><h2 class="faq-question">${question}</h2><p>${answer}</p></section>`).join('')}</article>`;
-}
-
 function renderLegal() {
-    app.innerHTML = `<article class="content-page legal-page">
-        <section id="privacy" class="mb-20"><h1 class="section-title">Privacy Policy</h1><p>Your privacy is important to us. We respect your privacy regarding information we may collect from you through our website.</p><p>We only ask for personal information when we need it to provide a service to you, and collect it by fair and lawful means, with your knowledge and consent.</p></section>
-        <hr><section id="terms" class="mb-20"><h2 class="section-title">Terms of Service</h2><p>By accessing our website, you agree to be bound by these terms of service and all applicable laws and regulations.</p></section>
-        <hr><section id="returns" class="mb-20"><h2 class="section-title">Returns Policy</h2><p>You have 30 calendar days to return an item from the date you received it. To be eligible, your item must be unused and in the same condition that you received it.</p></section>
-    </article>`;
+    showTemplate('tpl-legal');
     const section = routeInfo().params.get('section');
     if (section) document.getElementById(section)?.scrollIntoView();
 }
@@ -667,6 +606,7 @@ function renderAdmin(tab = 'overview') {
     const products = getProducts();
     const categories = getCategories(products);
     const orders = getAllOrders();
+    const unreadMessages = getMessages().filter(item => !item.read).length;
     let content;
     if (tab === 'overview') {
         const sales = orders.reduce((sum, order) => sum + Number(order.total), 0);
@@ -694,6 +634,8 @@ function renderAdmin(tab = 'overview') {
                 <ul class="category-list">${categories.map(category => `<li><span>${escapeHtml(category)}</span>${[['size', 'Size', categoryNeedsSize(category)], ['color', 'Color', categoryNeedsColor(category)]].map(([option, label, on]) => `<button type="button" class="category-toggle${on ? ' is-on' : ''}" aria-pressed="${on}" aria-label="${label} option for ${escapeHtml(category)}: ${on ? 'on' : 'off'}" data-category="${escapeHtml(category)}" data-option="${option}" onclick="toggleCategoryOption(this)">${label}: ${on ? 'On' : 'Off'}</button>`).join('')}<button type="button" class="remove-btn" aria-label="Remove ${escapeHtml(category)} category" data-category="${escapeHtml(category)}" onclick="removeCategory(this)">Remove</button></li>`).join('')}</ul>
             </section>
             <div class="table-wrap"><table><thead><tr><th>ID</th><th>Photo</th><th>Product</th><th>Category</th><th>Price</th><th>Actions</th></tr></thead><tbody>${products.map(product => `<tr><td>${Number(product.id)}</td><td><img class="inventory-thumb" src="${escapeHtml(product.image)}" alt=""></td><td>${escapeHtml(product.name)}</td><td>${escapeHtml(product.category)}</td><td>${formatMoney(product.price)}${hasBulk(product) ? `<br><small>${formatMoney(product.bulkPrice)} for ${Number(product.bulkMinQty)}+</small>` : ''}</td><td><div class="inventory-actions"><button class="btn btn-outline btn-small" onclick="openProductModal(${Number(product.id)})">Edit</button><button class="remove-btn" onclick="deleteProduct(${Number(product.id)})">Delete</button></div></td></tr>`).join('')}</tbody></table></div>`;
+    } else if (tab === 'contacts') {
+        content = contactsMarkup(getMessages());
     } else if (tab === 'reports') {
         content = reportsMarkup(orders);
     } else {
@@ -705,19 +647,13 @@ function renderAdmin(tab = 'overview') {
             <button type="button" class="admin-tab ${tab === 'inventory' ? 'active' : ''}" aria-current="${tab === 'inventory' ? 'page' : 'false'}" onclick="renderAdmin('inventory')">Inventory</button>
             <button type="button" class="admin-tab ${tab === 'orders' ? 'active' : ''}" aria-current="${tab === 'orders' ? 'page' : 'false'}" onclick="renderAdmin('orders')">Orders</button>
             <button type="button" class="admin-tab ${tab === 'reports' ? 'active' : ''}" aria-current="${tab === 'reports' ? 'page' : 'false'}" onclick="renderAdmin('reports')">Reports</button>
+            <button type="button" class="admin-tab ${tab === 'contacts' ? 'active' : ''}" aria-current="${tab === 'contacts' ? 'page' : 'false'}" onclick="renderAdmin('contacts')">Contacts${unreadMessages ? ` <span class="tab-badge" aria-label="${unreadMessages} unread">${unreadMessages}</span>` : ''}</button>
         </nav>
         <section>${content}</section>
-    </div>
-    <div id="product-modal" class="modal" hidden><div class="form-container modal-content"><h2 class="mb-20" id="product-modal-title">Add New Product</h2><form id="product-form" onsubmit="saveNewProduct(event)">
-        <input id="p-id" type="hidden">
-        <div class="form-group"><label for="p-name">Name</label><input id="p-name" required></div><div class="form-group"><label for="p-price">Price (K)</label><input id="p-price" type="number" min="0" step="0.01" required></div>
-        <div class="form-group"><label for="p-bulk-price">Bulk price (K) <small>(optional)</small></label><input id="p-bulk-price" type="number" min="0" step="0.01"><small class="form-hint">A lower price per item, shown on the product card. Must be less than the normal price.</small></div>
-        <div class="form-group"><label for="p-bulk-qty">Bulk price applies from this quantity</label><input id="p-bulk-qty" type="number" min="2" step="1" placeholder="e.g. 5"><small class="form-hint">The bulk price is used when a customer orders this many or more of the product (all colors and sizes together). Leave both bulk fields empty for no bulk price.</small></div>
-        <div class="form-group"><label for="p-image">Product photos</label><input id="p-image" type="file" accept="image/*" multiple onchange="addProductPhotos(event)"><small class="form-hint">Add up to 7 photos, each up to 2 MB. The first photo is the main photo shown in the shop.</small><div id="product-photo-list" class="photo-list"></div></div><div class="form-group"><label for="p-category">Category</label><select id="p-category" onchange="syncVariantFields()">${categories.map(category => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('')}</select></div>
-        <div id="color-field" hidden><div class="form-group"><label for="p-colors">Colors</label><input id="p-colors" placeholder="e.g. Black, White, Brown"><small class="form-hint">Separate colors with commas.</small></div></div>
-        <div id="size-field" hidden><div class="form-group"><label for="p-sizes">Sizes</label><input id="p-sizes" placeholder="e.g. 38, 39, 40, 41"><small class="form-hint">Separate sizes with commas.</small></div></div>
-        <div class="form-group"><label for="p-desc">Description</label><textarea id="p-desc"></textarea></div><div class="modal-actions"><button type="submit" class="btn" id="product-save-button">Save Product</button><button type="button" class="btn btn-outline" onclick="closeProductModal()">Cancel</button></div>
-    </form></div></div>`;
+    </div>`;
+    app.append(document.getElementById('tpl-product-modal').content.cloneNode(true));
+    // Category choices come from the data, so they are filled in here.
+    document.getElementById('p-category').innerHTML = categories.map(category => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('');
 }
 
 // How many units of an order item were sold / unavailable / still unmarked.
@@ -871,6 +807,78 @@ function reportsMarkup(orders) {
         <div class="table-wrap"><table><thead><tr><th>Month</th><th>Orders</th><th>Made</th><th>Lost</th><th>Not marked</th><th></th></tr></thead><tbody>${history}</tbody></table></div>`;
 }
 
+// ---------- Contact messages ----------
+let sendingMessage = false;
+
+async function sendContactMessage(event) {
+    event.preventDefault();
+    if (sendingMessage) return;
+    sendingMessage = true;
+    const user = getCurrentUser();
+    const id = `MSG-${Date.now()}`;
+    const message = {
+        id,
+        name: document.getElementById('contact-name').value.trim(),
+        email: document.getElementById('contact-email').value.trim(),
+        subject: document.getElementById('contact-subject').value.trim(),
+        message: document.getElementById('contact-message').value.trim(),
+        createdAtMs: Date.now(),
+        read: false,
+        uid: user?.uid || null
+    };
+    try {
+        await Promise.race([
+            db.collection('messages').doc(id).set(message),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Sending timed out.')), 8000))
+        ]);
+    } catch (error) {
+        console.error(error);
+        alert('Your message could not be sent. Please check your connection and try again.');
+        return;
+    } finally {
+        sendingMessage = false;
+    }
+    alert('Message sent! We will get back to you soon.');
+    location.hash = '#/home';
+}
+
+function contactsMarkup(messages) {
+    const unread = messages.filter(item => !item.read).length;
+    const cards = [...messages].reverse().map(item => `<article class="contact-card${item.read ? '' : ' is-unread'}">
+        <header class="contact-head"><h3>${escapeHtml(item.subject)}</h3>${item.read ? '' : '<span class="unread-dot">New</span>'}</header>
+        <p class="contact-meta">From <strong>${escapeHtml(item.name)}</strong> · ${escapeHtml(item.email)} · ${escapeHtml(new Date(Number(item.createdAtMs) || 0).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }))}</p>
+        <p class="contact-body">${escapeHtml(item.message)}</p>
+        <div class="contact-actions">
+            <button type="button" class="btn btn-outline btn-small" onclick="setMessageRead('${escapeHtml(item.id)}', ${item.read ? 'false' : 'true'})">${item.read ? 'Mark as unread' : 'Mark as read'}</button>
+            <button type="button" class="remove-btn" onclick="deleteMessage('${escapeHtml(item.id)}')">Delete</button>
+        </div>
+    </article>`).join('');
+    return `<h2 class="mb-20">Contact Messages</h2>
+        ${messages.length ? `<p class="form-hint mb-20">${unread} unread of ${messages.length} message${messages.length === 1 ? '' : 's'}.</p>` : ''}
+        ${cards || '<p>No messages yet.</p>'}`;
+}
+
+async function setMessageRead(id, read) {
+    try {
+        await db.collection('messages').doc(id).update({ read });
+    } catch (error) {
+        console.error(error);
+        alert('The message could not be updated. Check your connection and admin access.');
+    }
+    renderAdmin('contacts');
+}
+
+async function deleteMessage(id) {
+    if (!confirm('Delete this message?')) return;
+    try {
+        await db.collection('messages').doc(id).delete();
+    } catch (error) {
+        console.error(error);
+        alert('The message could not be deleted. Check your connection and admin access.');
+    }
+    renderAdmin('contacts');
+}
+
 function renderPage() {
     const { page } = routeInfo();
     toggleMenu(true);
@@ -880,18 +888,34 @@ function renderPage() {
         ? `<a href="#/dashboard">Profile</a> ${user.isAdmin ? '<a href="#/admin">Admin</a>' : ''} <a href="#/home" onclick="logout()">Logout</a>`
         : (authSettled ? '<a href="#/login">Login</a> <a href="#/register">Register</a>' : '');
     // Account pages need to know who is logged in; everything else can show straight away.
-    if (!authSettled && ['dashboard', 'admin'].includes(page)) {
-        app.innerHTML = '<p class="text-center mt-20">Loading…</p>';
+    if (!authSettled && ['dashboard', 'admin', 'checkout'].includes(page)) {
+        app.innerHTML = loadingMarkup;
+        return;
+    }
+    // Someone who is already logged in has no use for the login / register forms.
+    if (user && ['login', 'register', 'forgot-password'].includes(page)) {
+        location.hash = postLoginHash(user);
+        return;
+    }
+    if (!['login', 'register', 'forgot-password'].includes(page)) {
+        afterLoginHash = '';
+        loginNotice = '';
+    }
+    // Ordering needs an account.
+    if (page === 'checkout' && !user) {
+        requireLogin('#/checkout', 'Please log in or register to place your order.');
         return;
     }
     const pages = {
-        home: renderHome, search: renderSearch, product: renderProduct, login: renderLogin,
-        register: renderRegister, 'forgot-password': renderForgotPassword, cart: renderCart,
-        checkout: renderCheckout, success: renderOrderSuccess, about: renderAbout,
-        contact: renderContact, faq: renderFaq, legal: renderLegal, dashboard: () => renderDashboard(),
-        admin: () => renderAdmin()
+        home: renderHome, search: renderSearch, product: renderProduct,
+        login: showLoginPage, register: () => showTemplate('tpl-register'),
+        'forgot-password': () => showTemplate('tpl-forgot-password'), cart: renderCart,
+        checkout: renderCheckout, success: renderOrderSuccess, about: () => showTemplate('tpl-about'),
+        contact: () => showTemplate('tpl-contact'), faq: () => showTemplate('tpl-faq'), legal: renderLegal,
+        dashboard: () => renderDashboard(), admin: () => renderAdmin()
     };
     (pages[page] || renderHome)();
+    app.removeAttribute('aria-busy');
     updateCartCount();
 }
 
@@ -952,6 +976,14 @@ function addProductQuantity(id) {
 }
 
 function orderProductViaWhatsApp(productId) {
+    if (!getCurrentUser()) {
+        if (!authSettled) {
+            alert('Just a moment, still checking your login. Please try again.');
+        } else {
+            requireLogin(location.hash || '#/home', 'Please log in or register to place an order.');
+        }
+        return;
+    }
     const products = getProducts();
     const product = products.find(item => Number(item.id) === Number(productId));
     if (!product) {
@@ -1022,6 +1054,32 @@ function authErrorMessage(error) {
     }
 }
 
+// Where to go after logging in: back to what the person was doing, else their own page.
+let afterLoginHash = '';
+let loginNotice = '';
+
+function postLoginHash(user) {
+    const target = afterLoginHash || (user?.isAdmin ? '#/admin' : '#/dashboard');
+    afterLoginHash = '';
+    loginNotice = '';
+    return target;
+}
+
+function requireLogin(returnHash, message) {
+    afterLoginHash = returnHash;
+    loginNotice = message;
+    location.hash = '#/login';
+}
+
+function showLoginPage() {
+    showTemplate('tpl-login');
+    const notice = document.getElementById('login-notice');
+    if (notice && loginNotice) {
+        notice.textContent = loginNotice;
+        notice.hidden = false;
+    }
+}
+
 async function handleLogin(event) {
     event.preventDefault();
     const email = document.getElementById('login-email').value.trim().toLowerCase();
@@ -1029,7 +1087,7 @@ async function handleLogin(event) {
     try {
         const credential = await auth.signInWithEmailAndPassword(email, password);
         const user = await waitForUser(credential.user.uid);
-        location.hash = user?.isAdmin ? '#/admin' : '#/dashboard';
+        location.hash = postLoginHash(user);
     } catch (error) {
         console.error(error);
         alert(authErrorMessage(error));
@@ -1072,12 +1130,6 @@ async function handlePasswordReset(event) {
     location.hash = '#/login';
 }
 
-function sendContactMessage(event) {
-    event.preventDefault();
-    alert('Message sent! We will get back to you soon.');
-    location.hash = '#/home';
-}
-
 let processingOrder = false;
 
 async function processOrder() {
@@ -1092,6 +1144,11 @@ async function processOrder() {
         return;
     }
     const user = getCurrentUser();
+    if (!user) {
+        processingOrder = false;
+        requireLogin('#/checkout', 'Please log in or register to place your order.');
+        return;
+    }
     const order = {
         id: `ORD-${Date.now()}`,
         date: new Date().toLocaleDateString(),
@@ -1509,7 +1566,6 @@ window.addEventListener('hashchange', () => {
 });
 
 (async function boot() {
-    app.innerHTML = '<p class="text-center mt-20">Loading…</p>';
     await dataReady;
     appReady = true;
     if (!location.hash) location.hash = '#/home';
