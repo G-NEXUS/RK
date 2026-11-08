@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#10100e">
     <title>RK CONNEKT</title>
-    <link rel="stylesheet" href="styles.css?v=10">
+    <link rel="stylesheet" href="styles.css?v=15">
 </head>
 <body>
     <nav>
@@ -24,7 +24,23 @@
         </div>
     </nav>
 
-    <main id="app" class="container" aria-live="polite"></main>
+    <main id="app" class="container" aria-live="polite" aria-busy="true">
+        <!-- Placeholder cards, shown until the shop has loaded -->
+        <div class="skeleton-wrap" role="status"><span class="sr-only">Loading products…</span>
+            <div class="product-grid">
+                <div class="product-card skeleton-card" aria-hidden="true"><div class="skeleton skeleton-image"></div><div class="product-info"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div><div class="skeleton skeleton-button"></div></div></div>
+                <div class="product-card skeleton-card" aria-hidden="true"><div class="skeleton skeleton-image"></div><div class="product-info"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div><div class="skeleton skeleton-button"></div></div></div>
+                <div class="product-card skeleton-card" aria-hidden="true"><div class="skeleton skeleton-image"></div><div class="product-info"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div><div class="skeleton skeleton-button"></div></div></div>
+                <div class="product-card skeleton-card" aria-hidden="true"><div class="skeleton skeleton-image"></div><div class="product-info"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div><div class="skeleton skeleton-button"></div></div></div>
+                <div class="product-card skeleton-card" aria-hidden="true"><div class="skeleton skeleton-image"></div><div class="product-info"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div><div class="skeleton skeleton-button"></div></div></div>
+                <div class="product-card skeleton-card" aria-hidden="true"><div class="skeleton skeleton-image"></div><div class="product-info"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div><div class="skeleton skeleton-button"></div></div></div>
+                <div class="product-card skeleton-card" aria-hidden="true"><div class="skeleton skeleton-image"></div><div class="product-info"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div><div class="skeleton skeleton-button"></div></div></div>
+                <div class="product-card skeleton-card" aria-hidden="true"><div class="skeleton skeleton-image"></div><div class="product-info"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div><div class="skeleton skeleton-button"></div></div></div>
+                <div class="product-card skeleton-card" aria-hidden="true"><div class="skeleton skeleton-image"></div><div class="product-info"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div><div class="skeleton skeleton-button"></div></div></div>
+                <div class="product-card skeleton-card" aria-hidden="true"><div class="skeleton skeleton-image"></div><div class="product-info"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div><div class="skeleton skeleton-button"></div></div></div>
+            </div>
+        </div>
+    </main>
 
     <footer>
         <div class="container">
@@ -57,9 +73,129 @@
         </div>
     </footer>
 
+    <!-- Home page banner. The letters are numbered so CSS can reveal them one by one. -->
+    <template id="tpl-hero">
+        <header class="hero">
+            <div class="hero-content">
+                <p class="eyebrow animate-letters" aria-label="Good finds. Everyday value."><span aria-hidden="true"><span class="word"><span class="letter" style="--i:0">G</span><span class="letter" style="--i:1">o</span><span class="letter" style="--i:2">o</span><span class="letter" style="--i:3">d</span></span> <span class="word"><span class="letter" style="--i:4">f</span><span class="letter" style="--i:5">i</span><span class="letter" style="--i:6">n</span><span class="letter" style="--i:7">d</span><span class="letter" style="--i:8">s</span><span class="letter" style="--i:9">.</span></span> <span class="word"><span class="letter" style="--i:10">E</span><span class="letter" style="--i:11">v</span><span class="letter" style="--i:12">e</span><span class="letter" style="--i:13">r</span><span class="letter" style="--i:14">y</span><span class="letter" style="--i:15">d</span><span class="letter" style="--i:16">a</span><span class="letter" style="--i:17">y</span></span> <span class="word"><span class="letter" style="--i:18">v</span><span class="letter" style="--i:19">a</span><span class="letter" style="--i:20">l</span><span class="letter" style="--i:21">u</span><span class="letter" style="--i:22">e</span><span class="letter" style="--i:23">.</span></span></span></p>
+                <p class="animate-letters" aria-label="Shop dependable essentials for work, home, and everywhere in between."><span aria-hidden="true"><span class="word"><span class="letter" style="--i:24">S</span><span class="letter" style="--i:25">h</span><span class="letter" style="--i:26">o</span><span class="letter" style="--i:27">p</span></span> <span class="word"><span class="letter" style="--i:28">d</span><span class="letter" style="--i:29">e</span><span class="letter" style="--i:30">p</span><span class="letter" style="--i:31">e</span><span class="letter" style="--i:32">n</span><span class="letter" style="--i:33">d</span><span class="letter" style="--i:34">a</span><span class="letter" style="--i:35">b</span><span class="letter" style="--i:36">l</span><span class="letter" style="--i:37">e</span></span> <span class="word"><span class="letter" style="--i:38">e</span><span class="letter" style="--i:39">s</span><span class="letter" style="--i:40">s</span><span class="letter" style="--i:41">e</span><span class="letter" style="--i:42">n</span><span class="letter" style="--i:43">t</span><span class="letter" style="--i:44">i</span><span class="letter" style="--i:45">a</span><span class="letter" style="--i:46">l</span><span class="letter" style="--i:47">s</span></span> <span class="word"><span class="letter" style="--i:48">f</span><span class="letter" style="--i:49">o</span><span class="letter" style="--i:50">r</span></span> <span class="word"><span class="letter" style="--i:51">w</span><span class="letter" style="--i:52">o</span><span class="letter" style="--i:53">r</span><span class="letter" style="--i:54">k</span><span class="letter" style="--i:55">,</span></span> <span class="word"><span class="letter" style="--i:56">h</span><span class="letter" style="--i:57">o</span><span class="letter" style="--i:58">m</span><span class="letter" style="--i:59">e</span><span class="letter" style="--i:60">,</span></span> <span class="word"><span class="letter" style="--i:61">a</span><span class="letter" style="--i:62">n</span><span class="letter" style="--i:63">d</span></span> <span class="word"><span class="letter" style="--i:64">e</span><span class="letter" style="--i:65">v</span><span class="letter" style="--i:66">e</span><span class="letter" style="--i:67">r</span><span class="letter" style="--i:68">y</span><span class="letter" style="--i:69">w</span><span class="letter" style="--i:70">h</span><span class="letter" style="--i:71">e</span><span class="letter" style="--i:72">r</span><span class="letter" style="--i:73">e</span></span> <span class="word"><span class="letter" style="--i:74">i</span><span class="letter" style="--i:75">n</span></span> <span class="word"><span class="letter" style="--i:76">b</span><span class="letter" style="--i:77">e</span><span class="letter" style="--i:78">t</span><span class="letter" style="--i:79">w</span><span class="letter" style="--i:80">e</span><span class="letter" style="--i:81">e</span><span class="letter" style="--i:82">n</span><span class="letter" style="--i:83">.</span></span></span></p>
+            </div>
+        </header>
+    </template>
+
+    <!-- Fixed pages. common.js copies one of these into the page when its link is opened. -->
+    <template id="tpl-login">
+        <section class="auth-stage"><div class="form-container auth-form">
+            <button class="auth-close" type="button" aria-label="Close form" onclick="location.hash = '#/home'">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+            </button><h1 class="text-center mb-20">Welcome Back</h1>
+            <p id="login-notice" class="text-center mb-20 text-accent" role="status" hidden></p>
+            <form onsubmit="handleLogin(event)">
+                <div class="form-group"><label for="login-email">Email Address</label><input type="email" id="login-email" autocomplete="email" required></div>
+                <div class="form-group">
+                <label for="login-password">Password</label>
+                <div class="password-field">
+                    <input type="password" id="login-password" required autocomplete="current-password">
+                    <button class="password-toggle" type="button" aria-label="Show password" aria-pressed="false" onclick="togglePassword('login-password', this)">
+                        <svg class="icon-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <svg class="icon-eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a15.8 15.8 0 0 1-3.1 3.8M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7c1 0 2-.2 2.9-.5"/></svg>
+                    </button>
+                </div>
+            </div>
+                <p class="text-center mb-20"><a class="text-accent" href="#/forgot-password">Forgot Password?</a></p>
+                <button type="submit" class="btn btn-full">Login</button>
+            </form>
+            <p class="text-center mt-20">Don't have an account? <a class="text-accent" href="#/register">Register here</a></p>
+        </div></section>
+    </template>
+
+    <template id="tpl-register">
+        <section class="auth-stage"><div class="form-container auth-form">
+            <button class="auth-close" type="button" aria-label="Close form" onclick="location.hash = '#/home'">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+            </button><h1 class="text-center mb-20">Create Account</h1>
+            <form onsubmit="handleRegister(event)">
+                <div class="form-group"><label for="reg-name">Full Name</label><input type="text" id="reg-name" autocomplete="name" required></div>
+                <div class="form-group"><label for="reg-email">Email Address</label><input type="email" id="reg-email" autocomplete="email" required></div>
+                <div class="form-group">
+                <label for="reg-password">Password</label>
+                <div class="password-field">
+                    <input type="password" id="reg-password" required autocomplete="new-password">
+                    <button class="password-toggle" type="button" aria-label="Show password" aria-pressed="false" onclick="togglePassword('reg-password', this)">
+                        <svg class="icon-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <svg class="icon-eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a15.8 15.8 0 0 1-3.1 3.8M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7c1 0 2-.2 2.9-.5"/></svg>
+                    </button>
+                </div>
+            </div>
+                <button type="submit" class="btn btn-full">Register</button>
+            </form>
+            <p class="text-center mt-20">Already have an account? <a class="text-accent" href="#/login">Login here</a></p>
+        </div></section>
+    </template>
+
+    <template id="tpl-forgot-password">
+        <section class="auth-stage"><div class="form-container auth-form">
+            <button class="auth-close" type="button" aria-label="Close form" onclick="location.hash = '#/home'">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+            </button><h1 class="text-center mb-20">Reset Password</h1>
+            <p class="mb-20 text-center">Enter your email and we'll send you a link to reset your password.</p>
+            <form onsubmit="handlePasswordReset(event)"><div class="form-group"><label for="reset-email">Email Address</label><input type="email" id="reset-email" required></div><button type="submit" class="btn btn-full">Send Reset Link</button></form>
+            <p class="text-center mt-20"><a class="text-accent" href="#/login">Back to Login</a></p>
+        </div></section>
+    </template>
+
+    <template id="tpl-about">
+        <article class="content-page"><h1 class="section-title">About RK CONNEKT</h1>
+            <p class="mb-20">RK CONNEKT is here to make shopping for dependable everyday essentials simple and straightforward.</p>
+            <p class="mb-20">Our collection brings together useful products for home, work, and leisure, with a focus on quality, value, and friendly service.</p>
+            <img class="content-image" src="https://images.unsplash.com/photo-1497366216548-37526070297c?w=1000" alt="A bright, welcoming workspace"></article>
+    </template>
+
+    <template id="tpl-contact">
+        <div class="form-container"><h1 class="section-title">Get in Touch</h1><p class="mb-20">Have a question? We're here to help.</p>
+            <form onsubmit="sendContactMessage(event)">
+                <div class="form-group"><label for="contact-name">Name</label><input id="contact-name" required></div>
+                <div class="form-group"><label for="contact-email">Email</label><input type="email" id="contact-email" required></div>
+                <div class="form-group"><label for="contact-subject">Subject</label><input id="contact-subject" required></div>
+                <div class="form-group"><label for="contact-message">Message</label><textarea id="contact-message" rows="5" required></textarea></div>
+                <button type="submit" class="btn btn-full">Send Message</button>
+            </form></div>
+    </template>
+
+    <template id="tpl-faq">
+        <article class="content-page"><h1 class="section-title">Frequently Asked Questions</h1>
+            <section class="faq-item"><h2 class="faq-question">How long does shipping take?</h2><p>Domestic shipping typically takes 3-5 business days. International shipping can take 7-14 business days.</p></section>
+            <section class="faq-item"><h2 class="faq-question">What is your return policy?</h2><p>We offer a 30-day return policy for all unused items in their original packaging.</p></section>
+            <section class="faq-item"><h2 class="faq-question">Do you offer international shipping?</h2><p>Yes, we ship to over 50 countries worldwide. Shipping costs will be calculated at checkout.</p></section>
+            <section class="faq-item"><h2 class="faq-question">How can I track my order?</h2><p>Once your order ships, you will receive an email with a tracking number and a link to track your package.</p></section>
+        </article>
+    </template>
+
+    <template id="tpl-legal">
+        <article class="content-page legal-page">
+            <section id="privacy" class="mb-20"><h1 class="section-title">Privacy Policy</h1><p>Your privacy is important to us. We respect your privacy regarding information we may collect from you through our website.</p><p>We only ask for personal information when we need it to provide a service to you, and collect it by fair and lawful means, with your knowledge and consent.</p></section>
+            <hr><section id="terms" class="mb-20"><h2 class="section-title">Terms of Service</h2><p>By accessing our website, you agree to be bound by these terms of service and all applicable laws and regulations.</p></section>
+            <hr><section id="returns" class="mb-20"><h2 class="section-title">Returns Policy</h2><p>You have 30 calendar days to return an item from the date you received it. To be eligible, your item must be unused and in the same condition that you received it.</p></section>
+        </article>
+    </template>
+
+    <!-- Admin: add / edit product popup -->
+    <template id="tpl-product-modal">
+        <div id="product-modal" class="modal" hidden><div class="form-container modal-content"><h2 class="mb-20" id="product-modal-title">Add New Product</h2><form id="product-form" onsubmit="saveNewProduct(event)">
+        <input id="p-id" type="hidden">
+        <div class="form-group"><label for="p-name">Name</label><input id="p-name" required></div><div class="form-group"><label for="p-price">Price (K)</label><input id="p-price" type="number" min="0" step="0.01" required></div>
+        <div class="form-group"><label for="p-bulk-price">Bulk price (K) <small>(optional)</small></label><input id="p-bulk-price" type="number" min="0" step="0.01"><small class="form-hint">A lower price per item, shown on the product card. Must be less than the normal price.</small></div>
+        <div class="form-group"><label for="p-bulk-qty">Bulk price applies from this quantity</label><input id="p-bulk-qty" type="number" min="2" step="1" placeholder="e.g. 5"><small class="form-hint">The bulk price is used when a customer orders this many or more of the product (all colors and sizes together). Leave both bulk fields empty for no bulk price.</small></div>
+        <div class="form-group"><label for="p-image">Product photos</label><input id="p-image" type="file" accept="image/*" multiple onchange="addProductPhotos(event)"><small class="form-hint">Add up to 7 photos, each up to 2 MB. The first photo is the main photo shown in the shop.</small><div id="product-photo-list" class="photo-list"></div></div><div class="form-group"><label for="p-category">Category</label><select id="p-category" onchange="syncVariantFields()"></select></div>
+        <div id="color-field" hidden><div class="form-group"><label for="p-colors">Colors</label><input id="p-colors" placeholder="e.g. Black, White, Brown"><small class="form-hint">Separate colors with commas.</small></div></div>
+        <div id="size-field" hidden><div class="form-group"><label for="p-sizes">Sizes</label><input id="p-sizes" placeholder="e.g. 38, 39, 40, 41"><small class="form-hint">Separate sizes with commas.</small></div></div>
+        <div class="form-group"><label for="p-desc">Description</label><textarea id="p-desc"></textarea></div><div class="modal-actions"><button type="submit" class="btn" id="product-save-button">Save Product</button><button type="button" class="btn btn-outline" onclick="closeProductModal()">Cancel</button></div>
+    </form></div></div>
+    </template>
+
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-    <script src="common.js?v=3"></script>
+    <script src="common.js?v=8"></script>
 </body>
 </html>
