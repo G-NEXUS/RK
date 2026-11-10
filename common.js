@@ -3,12 +3,12 @@
 // The shopping cart stays in this browser's localStorage, as before.
 
 const firebaseConfig = {
-    apiKey: "AIzaSyCHAemBi71qB9diMJ9--_IlnCt2mzc3cV4",
-    authDomain: "rk-main-c7124.firebaseapp.com",
-    projectId: "rk-main-c7124",
-    storageBucket: "rk-main-c7124.firebasestorage.app",
-    messagingSenderId: "31301974162",
-    appId: "1:31301974162:web:c5ef6cd84e3e7ff2928e4b"
+  apiKey: "AIzaSyCHAemBi71qB9diMJ9--_IlnCt2mzc3cV4",
+  authDomain: "rk-main-c7124.firebaseapp.com",
+  projectId: "rk-main-c7124",
+  storageBucket: "rk-main-c7124.firebasestorage.app",
+  messagingSenderId: "31301974162",
+  appId: "1:31301974162:web:c5ef6cd84e3e7ff2928e4b"
 };
 
 firebase.initializeApp(firebaseConfig);
