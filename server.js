@@ -224,7 +224,47 @@ async function start() {
     await db.collection('users').createIndex({ firebaseUid: 1 }, { unique: true });
     await db.collection('products').createIndex({ id: 1 }, { unique: true });
     await db.collection('orders').createIndex({ id: 1, uid: 1 }, { unique: true });
+    await migrateFromFirestore();
     app.listen(port, '0.0.0.0', () => console.log(`RK CONNEKT listening on ${port}`));
+}
+
+async function migrateFromFirestore() {
+    if (process.env.MIGRATE_FROM_FIRESTORE !== 'true') return;
+    const existingProducts = await db.collection('products').countDocuments();
+    if (existingProducts > 0) {
+        console.log('MongoDB already contains products; skipping Firebase migration.');
+        return;
+    }
+    const firestore = firebaseAdmin.firestore();
+    const [products, categories, users, orders, messages] = await Promise.all([
+        firestore.collection('products').get(),
+        firestore.doc('meta/categories').get(),
+        firestore.collection('users').get(),
+        firestore.collection('orders').get(),
+        firestore.collection('messages').get()
+    ]);
+    if (!products.empty) {
+        await db.collection('products').insertMany(products.docs.map(doc => ({ ...doc.data(), id: Number(doc.data().id || doc.id) })), { ordered: false });
+    }
+    if (categories.exists) {
+        const data = categories.data() || {};
+        const variantCategories = data.variantCategories || [];
+        await db.collection('meta').updateOne({ key: 'categories' }, { $set: { key: 'categories', list: data.list || [], sizeCategories: data.sizeCategories || variantCategories, colorCategories: data.colorCategories || variantCategories } }, { upsert: true });
+    }
+    if (!users.empty) {
+        await Promise.all(users.docs.map(doc => {
+            const data = doc.data() || {};
+            return db.collection('users').updateOne({ firebaseUid: doc.id }, { $set: { ...data, firebaseUid: doc.id, email: data.email || '' } }, { upsert: true });
+        }));
+    }
+    for (const [collection, snapshot] of [['orders', orders], ['messages', messages]]) {
+        await Promise.all(snapshot.docs.map(doc => {
+            const data = doc.data() || {};
+            const id = String(data.id || doc.id);
+            return db.collection(collection).updateOne({ id }, { $set: { ...data, id } }, { upsert: true });
+        }));
+    }
+    console.log(`Firebase migration complete: ${products.size} products, ${users.size} users, ${orders.size} orders, ${messages.size} messages.`);
 }
 
 start().catch(error => { console.error(error); process.exit(1); });

@@ -13,3 +13,5 @@ services:
         value: rk_connekt
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
+      - key: MIGRATE_FROM_FIRESTORE
+        value: "false"
