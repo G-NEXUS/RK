@@ -1,9 +1,9 @@
-// Shared storefront data (Firebase) and cart helpers.
-// Products, categories, accounts and orders live in Firebase.
+// Shared storefront data (Render API/MongoDB) and cart helpers.
+// Products, categories, accounts and orders live behind the API.
 // The shopping cart stays in this browser's localStorage, as before.
 
 const firebaseConfig = {
-    apiKey: "AIzaSyCHAemBi71qB9diMJ9--_IlnCt2mzc3cV4",
+    apiKey: "AIzaSyCHAemBi71qB9diMJ9--_IlnCt2mzcC3V4",
     authDomain: "rk-main-c7124.firebaseapp.com",
     projectId: "rk-main-c7124",
     storageBucket: "rk-main-c7124.firebasestorage.app",
@@ -13,9 +13,99 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
-const db = firebase.firestore();
+const API_BASE = window.RK_API_BASE || '';
 
-// In-memory copy of the data, kept fresh by Firestore listeners.
+async function apiRequest(path, options = {}) {
+    const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+    const user = auth.currentUser;
+    if (user) headers.Authorization = `Bearer ${await user.getIdToken()}`;
+    const response = await fetch(`${API_BASE}/api${path}`, { ...options, headers });
+    let body = {};
+    try { body = await response.json(); } catch (error) { /* non-JSON response */ }
+    if (!response.ok) {
+        const error = new Error(body.error || 'The request could not be completed.');
+        error.code = body.code;
+        throw error;
+    }
+    return body;
+}
+
+function makeSnapshot(items) {
+    return { docs: (items || []).map(item => ({ data: () => item })) };
+}
+
+function collectionUrl(name) {
+    if (name === 'products') return '/products';
+    if (name === 'orders') return '/orders';
+    if (name === 'messages') return '/messages';
+    if (name === 'users') return '/users/me';
+    if (name === 'meta') return '/categories';
+    return `/${name}`;
+}
+
+function apiQuery(name) {
+    return {
+        orderBy() { return this; },
+        where() { return this; },
+        async get() {
+            const body = await apiRequest(collectionUrl(name));
+            const key = name === 'products' ? 'products' : name === 'orders' ? 'orders' : name === 'messages' ? 'messages' : 'items';
+            return makeSnapshot(body[key] || []);
+        },
+        onSnapshot(onData, onError) {
+            let stopped = false;
+            const load = () => apiRequest(collectionUrl(name)).then(body => {
+                if (stopped) return;
+                const key = name === 'products' ? 'products' : name === 'orders' ? 'orders' : name === 'messages' ? 'messages' : 'items';
+                onData(makeSnapshot(body[key] || []));
+            }).catch(error => { if (!stopped && onError) onError(error); });
+            load();
+            const timer = setInterval(load, 30000);
+            return () => { stopped = true; clearInterval(timer); };
+        }
+    };
+}
+
+function apiDoc(name, id) {
+    const isCategories = name === 'meta' && id === 'categories';
+    const path = isCategories ? '/categories' : name === 'users' ? '/users/me' : `/${name}/${encodeURIComponent(id)}`;
+    return {
+        async get() {
+            const body = await apiRequest(path);
+            return { exists: Boolean(body.user || body.categories || body[name.slice(0, -1)] || body), data: () => body.user || body.categories ? { list: body.categories, sizeCategories: body.sizeCategories, colorCategories: body.colorCategories } : body[name.slice(0, -1)] || body };
+        },
+        onSnapshot(onData, onError) {
+            let stopped = false;
+            const load = () => this.get().then(snapshot => { if (!stopped) onData(snapshot); }).catch(error => { if (!stopped && onError) onError(error); });
+            load();
+            const timer = setInterval(load, 30000);
+            return () => { stopped = true; clearInterval(timer); };
+        },
+        async set(value) {
+            if (name === 'orders') return apiRequest('/orders', { method: 'POST', body: JSON.stringify(value) });
+            if (name === 'products') return apiRequest(`/admin/products/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(value) });
+            if (name === 'meta') return apiRequest('/admin/categories', { method: 'PUT', body: JSON.stringify(value) });
+            if (name === 'users') return apiRequest('/users/me', { method: 'PATCH', body: JSON.stringify(value) });
+            if (name === 'messages') return apiRequest('/messages', { method: 'POST', body: JSON.stringify(value) });
+        },
+        async update(value) {
+            if (name === 'orders') return apiRequest(path, { method: 'PUT', body: JSON.stringify(value) });
+            if (name === 'users') return apiRequest('/users/me', { method: 'PATCH', body: JSON.stringify(value) });
+            if (name === 'messages') return apiRequest(path, { method: 'PATCH', body: JSON.stringify(value) });
+        },
+        async delete() {
+            if (name === 'products') return apiRequest(`/admin/products/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            if (name === 'messages') return apiRequest(path, { method: 'DELETE' });
+        }
+    };
+}
+
+const db = {
+    collection(name) { return { ...apiQuery(name), doc: id => apiDoc(name, id) }; },
+    doc(path) { const [name, id] = path.split('/'); return apiDoc(name, id); }
+};
+
+// In-memory copy of the data, kept fresh by API polling listeners.
 const store = {
     products: [],
     categories: [],
@@ -65,7 +155,7 @@ function rememberOrder(order) {
     store.recentOrders[order.id] = order;
 }
 
-// ---------- Firestore listeners ----------
+// ---------- API listeners ----------
 function listen(query, onData, onError) {
     let unsubscribe = () => {};
     const ready = new Promise(resolve => {

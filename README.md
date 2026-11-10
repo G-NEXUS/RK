@@ -1,22 +1,20 @@
 # RK CONNEKT
 
-The storefront is a single-page app served from `index.html`. Navigation uses hash routes, while `styles.css` contains the black-and-orange theme and `common.js` handles Firebase and the shared product and cart data.
+The storefront is a single-page app served from `index.html`. Navigation uses hash routes, while `styles.css` contains the black-and-orange theme and `common.js` handles the shared product and cart data through the Render API.
 
 Prices are displayed in Zambian kwacha (K).
 
-## Firebase
+## MongoDB and Render
 
-Products, categories, customer accounts and orders are stored in Firebase (project `rk-main-c7124`):
+Products, categories, customer accounts, orders and messages are stored in MongoDB through the Express API in `server.js`. Render serves both the API and the existing static frontend from one web service.
 
-- **Authentication** (Email/Password) handles register, login and password reset.
-- **Firestore** stores `products`, `meta/categories`, `users` and `orders`. Security rules are in `firestore.rules`; paste them in the Firebase console under Firestore Database > Rules and publish.
+- **Authentication** remains Firebase Email/Password for the staged migration. The browser sends Firebase ID tokens to Render, and the API verifies them with Firebase Admin before reading or writing MongoDB. Admin access is controlled by the server-side `isAdmin` field.
+- **MongoDB** stores `products`, `meta`, `users`, `orders`, `messages` and password-reset records.
 - Each product can have up to 7 photos. They are compressed in the browser (max 800 px) and stored inside the product document. The first photo is the main one; the rest appear as a gallery on the product page.
 - The shopping cart still lives in each visitor's browser (localStorage).
 
 ### Making someone an admin
-1. Register the account on the site.
-2. In the Firebase console open Firestore Database > `users` > that user's document.
-3. Set `isAdmin` to `true` (boolean). Admin rights can only be granted here, never from the website.
+Set `isAdmin` to `true` directly on the user document in MongoDB Atlas. Admin routes verify this value on the server; it is never accepted from the browser as authorization.
 
 ## Checkout
 Checkout saves the order to Firestore for the admin dashboard and opens a prefilled WhatsApp message to the admin; it does not collect card or payment details. The order message lists each product, quantity, selected options, and the total in kwacha. The customer must press **Send** in WhatsApp.
@@ -24,7 +22,11 @@ Checkout saves the order to Firestore for the admin dashboard and opens a prefil
 ## Categories with size and color
 In Admin > Inventory, each category has two separate switches: **Size** and **Color** (tick either or both when adding the category, or flip them later). For products in a category, the product form asks only for the options that are switched on (comma-separated lists). On the product page the customer picks those options and a quantity, and can add several combinations; each one is its own line in the cart and in the order.
 
-Whenever `firestore.rules` changes, paste it into the Firebase console (Firestore Database > Rules) and publish.
+Set `MONGODB_URI`, `MONGODB_DB` and `FIREBASE_SERVICE_ACCOUNT_JSON` in Render. Keep `.env` local only and never commit it.
+
+### Existing Firebase data
+
+The existing product, category, order and contact data must be exported from Firebase and imported into MongoDB before cutover. Firebase Authentication remains the identity source during this staged migration, so existing customer passwords and account recovery continue to work. Firestore can be disabled only after the MongoDB data import and Render API have been verified.
 
 ## Bulk price
 In the product form, **Bulk price** and **Bulk price applies from this quantity** (both optional). The card shows the bulk price in small text under the normal price. When a customer's cart holds at least that many of the product (all colors and sizes together), every unit of it is charged the bulk price in the cart, checkout, WhatsApp message and saved order.
