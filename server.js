@@ -9,7 +9,16 @@ const app = express();
 const port = Number(process.env.PORT || 10000);
 const mongoUri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DB || 'rk_connekt';
-const firebaseServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON) : null;
+function loadFirebaseServiceAccount() {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON must contain the raw Firebase service-account JSON, not JavaScript such as var admin = require("firebase-admin").');
+    }
+}
+const firebaseServiceAccount = loadFirebaseServiceAccount();
 const client = mongoUri ? new MongoClient(mongoUri) : null;
 let db;
 if (firebaseServiceAccount) firebaseAdmin.initializeApp({ credential: firebaseAdmin.credential.cert(firebaseServiceAccount) });
