@@ -1124,23 +1124,32 @@ function removeCartItem(index) {
     renderCart();
 }
 
-function authErrorMessage(error) {
+function authErrorMessage(error, action = 'login') {
     switch (error?.code) {
         case 'auth/invalid-credential':
         case 'auth/wrong-password':
+            return 'Login failed: the email and password combination is incorrect. Check both fields, or use Forgot Password to reset it.';
         case 'auth/user-not-found':
+            return 'No account was found for this email address. Check the email or choose Register to create an account.';
+        case 'auth/user-disabled':
+            return 'This account has been disabled. Please contact support for help.';
         case 'auth/invalid-email':
-            return 'Invalid email or password.';
+            return 'Please enter a valid email address, for example name@example.com.';
         case 'auth/email-already-in-use':
-            return 'Email already registered.';
+            return 'Registration failed: an account already exists for this email. Please use Login or Forgot Password instead.';
         case 'auth/weak-password':
-            return 'Password must be at least 6 characters.';
+        case 'auth/password-does-not-meet-requirements':
+            return 'Registration failed: your password does not meet the requirements. Use at least 6 characters.';
         case 'auth/too-many-requests':
-            return 'Too many attempts. Please try again later.';
+            return 'Too many sign-in attempts. Please wait a few minutes before trying again.';
         case 'auth/network-request-failed':
-            return 'Network error. Check your connection and try again.';
+            return `${action === 'register' ? 'Registration' : 'Login'} could not connect to the server. Check your internet connection and try again.`;
+        case 'auth/operation-not-allowed':
+            return 'This sign-in method is not enabled yet. Please contact support.';
+        case 'auth/missing-password':
+            return 'Please enter your password.';
         default:
-            return 'Something went wrong. Please try again.';
+            return `${action === 'register' ? 'Registration' : action === 'reset' ? 'Password reset' : 'Login'} failed. ${error?.message || 'Please try again.'}`;
     }
 }
 
@@ -1174,31 +1183,51 @@ async function handleLogin(event) {
     event.preventDefault();
     const email = document.getElementById('login-email').value.trim().toLowerCase();
     const password = document.getElementById('login-password').value;
+    if (!email) {
+        alert('Login failed: please enter your email address.');
+        return;
+    }
+    if (!password) {
+        alert('Login failed: please enter your password.');
+        return;
+    }
     try {
         const credential = await auth.signInWithEmailAndPassword(email, password);
         const user = await waitForUser(credential.user.uid);
+        alert(`Welcome back${user?.name ? `, ${user.name}` : ''}! You are now signed in.`);
         location.hash = postLoginHash(user);
     } catch (error) {
         console.error(error);
-        alert(authErrorMessage(error));
+        alert(authErrorMessage(error, 'login'));
     }
 }
-
 async function handleRegister(event) {
     event.preventDefault();
     const name = document.getElementById('reg-name').value.trim();
     const email = document.getElementById('reg-email').value.trim();
     const password = document.getElementById('reg-password').value;
+    if (!name) {
+        alert('Registration failed: please enter your full name.');
+        return;
+    }
+    if (!email) {
+        alert('Registration failed: please enter your email address.');
+        return;
+    }
+    if (!password) {
+        alert('Registration failed: please create a password.');
+        return;
+    }
     registering = true;
     try {
         const credential = await auth.createUserWithEmailAndPassword(email, password);
         await db.collection('users').doc(credential.user.uid).set({ name, email, isAdmin: false });
         await auth.signOut();
-        alert('Registration successful! Please login.');
+        alert(`Account created successfully${name ? ` for ${name}` : ''}! Please log in with your new account.`);
         location.hash = '#/login';
     } catch (error) {
         console.error(error);
-        alert(authErrorMessage(error));
+        alert(authErrorMessage(error, 'register'));
     } finally {
         registering = false;
     }
@@ -1212,7 +1241,7 @@ async function handlePasswordReset(event) {
     } catch (error) {
         console.error(error);
         if (error.code === 'auth/network-request-failed') {
-            alert(authErrorMessage(error));
+            alert(authErrorMessage(error, 'reset'));
             return;
         }
     }
