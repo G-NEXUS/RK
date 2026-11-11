@@ -281,9 +281,46 @@ async function start() {
     await db.collection('users').createIndex({ email: 1 }, { unique: true, sparse: true });
     await db.collection('sessions').createIndex({ expiresAtMs: 1 }, { expireAfterSeconds: 0 });
     await db.collection('passwordResets').createIndex({ expiresAtMs: 1 }, { expireAfterSeconds: 0 });
+    if (process.env.MIGRATE_CATALOG_FROM_FIRESTORE === 'true') await migrateCatalogFromFirestore();
     await db.collection('products').createIndex({ id: 1 }, { unique: true });
     await db.collection('orders').createIndex({ id: 1, uid: 1 }, { unique: true });
     app.listen(port, '0.0.0.0', () => console.log(`RK CONNEKT listening on ${port}`));
+}
+
+function firestoreValue(value) {
+    if (!value || typeof value !== 'object') return value;
+    if ('stringValue' in value) return value.stringValue;
+    if ('integerValue' in value) return Number(value.integerValue);
+    if ('doubleValue' in value) return Number(value.doubleValue);
+    if ('booleanValue' in value) return value.booleanValue;
+    if ('timestampValue' in value) return value.timestampValue;
+    if ('nullValue' in value) return null;
+    if ('arrayValue' in value) return (value.arrayValue.values || []).map(firestoreValue);
+    if ('mapValue' in value) return Object.fromEntries(Object.entries(value.mapValue.fields || {}).map(([key, item]) => [key, firestoreValue(item)]));
+    return value;
+}
+
+async function firestoreDocument(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Firestore import request failed with HTTP ${response.status}`);
+    return response.json();
+}
+
+async function migrateCatalogFromFirestore() {
+    const base = 'https://firestore.googleapis.com/v1/projects/rk-main-c7124/databases/(default)/documents';
+    const [productsDoc, categoriesDoc] = await Promise.all([
+        firestoreDocument(`${base}/products`),
+        firestoreDocument(`${base}/meta/categories`)
+    ]);
+    const products = (productsDoc.documents || []).map(document => ({
+        ...Object.fromEntries(Object.entries(document.fields || {}).map(([key, value]) => [key, firestoreValue(value)])),
+        id: Number(firestoreValue(document.fields?.id) || document.name.split('/').pop())
+    }));
+    for (const product of products) await db.collection('products').replaceOne({ id: product.id }, product, { upsert: true });
+    const categoryData = Object.fromEntries(Object.entries(categoriesDoc.fields || {}).map(([key, value]) => [key, firestoreValue(value)]));
+    const variantCategories = categoryData.variantCategories || [];
+    await db.collection('meta').updateOne({ key: 'categories' }, { $set: { key: 'categories', list: categoryData.list || [], sizeCategories: categoryData.sizeCategories || variantCategories, colorCategories: categoryData.colorCategories || variantCategories } }, { upsert: true });
+    console.log(`Catalog migration complete: ${products.length} products and ${(categoryData.list || []).length} categories.`);
 }
 
 start().catch(error => { console.error(error); process.exit(1); });

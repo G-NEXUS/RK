@@ -39,6 +39,8 @@ SMTP_PASSWORD=...
 RESET_FROM_EMAIL=...
 ```
 
+To import the remaining public catalog from the old Firestore database, temporarily set `MIGRATE_CATALOG_FROM_FIRESTORE=true` in Render and deploy once. The service imports products and category metadata without deleting MongoDB records. Set it back to `false` or remove it after the deployment log says `Catalog migration complete`.
+
 If SMTP is not configured, reset links are written to the server log for administrator-assisted recovery; users are never shown the token in the browser.
 
 ## Checkout

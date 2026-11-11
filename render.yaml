@@ -25,3 +25,5 @@ services:
         sync: false
       - key: RESET_FROM_EMAIL
         sync: false
+      - key: MIGRATE_CATALOG_FROM_FIRESTORE
+        sync: false
