@@ -2,6 +2,7 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const firebaseAdmin = require('firebase-admin');
+const bcrypt = require('bcryptjs');
 const { MongoClient, ObjectId } = require('mongodb');
 require('dotenv').config();
 
@@ -118,6 +119,28 @@ app.get('/api/auth/me', async (req, res) => {
     } catch {
         res.json({ user: null });
     }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const password = String(req.body.password || '');
+    const user = await db.collection('users').findOne({ email });
+    if (!user?.passwordHash) return res.status(409).json({ code: 'auth/firebase-fallback-required' });
+    if (!(await bcrypt.compare(password, user.passwordHash))) return res.status(401).json({ code: 'auth/invalid-credential' });
+    const customToken = await firebaseAdmin.auth().createCustomToken(user.firebaseUid);
+    res.json({ user: publicUser(user), customToken });
+});
+
+app.post('/api/auth/migrate-password', auth, async (req, res) => {
+    const password = String(req.body.password || '');
+    if (password.length < 6) return res.status(400).json({ code: 'auth/weak-password' });
+    const passwordHash = await bcrypt.hash(password, 12);
+    await db.collection('users').updateOne(
+        { firebaseUid: req.authUid },
+        { $set: { passwordHash, authProvider: 'mongodb', passwordMigratedAtMs: Date.now(), email: req.firebaseUser.email || '' }, $setOnInsert: { firebaseUid: req.authUid, isAdmin: false, createdAtMs: Date.now() } },
+        { upsert: true }
+    );
+    res.json({ ok: true });
 });
 
 app.post('/api/auth/forgot-password', (req, res) => res.json({ ok: true }));

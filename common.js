@@ -1192,7 +1192,15 @@ async function handleLogin(event) {
         return;
     }
     try {
-        const credential = await auth.signInWithEmailAndPassword(email, password);
+        let credential;
+        try {
+            const mongoLogin = await apiRequest('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+            credential = await auth.signInWithCustomToken(mongoLogin.customToken);
+        } catch (mongoError) {
+            if (!['auth/firebase-fallback-required', 'auth/invalid-credential'].includes(mongoError.code)) throw mongoError;
+            credential = await auth.signInWithEmailAndPassword(email, password);
+            await apiRequest('/auth/migrate-password', { method: 'POST', body: JSON.stringify({ password }) });
+        }
         const user = await waitForUser(credential.user.uid);
         alert(`Welcome back${user?.name ? `, ${user.name}` : ''}! You are now signed in.`);
         location.hash = postLoginHash(user);
@@ -1222,6 +1230,7 @@ async function handleRegister(event) {
     try {
         const credential = await auth.createUserWithEmailAndPassword(email, password);
         await db.collection('users').doc(credential.user.uid).set({ name, email, isAdmin: false });
+        await apiRequest('/auth/migrate-password', { method: 'POST', body: JSON.stringify({ password }) });
         await auth.signOut();
         alert(`Account created successfully${name ? ` for ${name}` : ''}! Please log in with your new account.`);
         location.hash = '#/login';
