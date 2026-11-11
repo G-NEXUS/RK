@@ -1,8 +1,8 @@
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
-const firebaseAdmin = require('firebase-admin');
 const bcrypt = require('bcryptjs');
+const nodemailer = require('nodemailer');
 const { MongoClient, ObjectId } = require('mongodb');
 require('dotenv').config();
 
@@ -10,20 +10,14 @@ const app = express();
 const port = Number(process.env.PORT || 10000);
 const mongoUri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DB || 'rk_connekt';
-function loadFirebaseServiceAccount() {
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-    if (!raw) return null;
-    try {
-        return JSON.parse(raw);
-    } catch {
-        throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON must contain the raw Firebase service-account JSON, not JavaScript such as var admin = require("firebase-admin").');
-    }
-}
-const firebaseServiceAccount = loadFirebaseServiceAccount();
 const client = mongoUri ? new MongoClient(mongoUri) : null;
 let db;
-if (firebaseServiceAccount) firebaseAdmin.initializeApp({ credential: firebaseAdmin.credential.cert(firebaseServiceAccount) });
-
+const mailer = process.env.SMTP_HOST ? nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD || '' } : undefined
+}) : null;
 app.use(express.json({ limit: '12mb' }));
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
@@ -34,20 +28,28 @@ app.use((req, res, next) => {
 });
 
 function requireConfig() {
-    if (!mongoUri || !firebaseServiceAccount) throw new Error('MONGODB_URI and FIREBASE_SERVICE_ACCOUNT_JSON are required.');
+    if (!mongoUri) throw new Error('MONGODB_URI is required.');
 }
-
 function publicUser(user) {
-    return { uid: user.firebaseUid, name: user.name || '', email: user.email, isAdmin: user.isAdmin === true };
+    return { uid: user.uid || user.firebaseUid, name: user.name || '', email: user.email || '', isAdmin: user.isAdmin === true };
 }
-
+function hashSession(token) { return crypto.createHash('sha256').update(token).digest('hex'); }
+function newId(prefix) { return `${prefix}_${crypto.randomBytes(12).toString('hex')}`; }
+async function createSession(user) {
+    const token = crypto.randomBytes(32).toString('hex');
+    await db.collection('sessions').insertOne({ tokenHash: hashSession(token), uid: user.uid || user.firebaseUid, createdAtMs: Date.now(), expiresAtMs: Date.now() + 1000 * 60 * 60 * 24 * 30 });
+    return token;
+}
 async function auth(req, res, next) {
     const header = req.get('authorization') || '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
     if (!token) return res.status(401).json({ error: 'Authentication required.' });
     try {
-        req.firebaseUser = await firebaseAdmin.auth().verifyIdToken(token);
-        req.authUid = req.firebaseUser.uid;
+        const session = await db.collection('sessions').findOne({ tokenHash: hashSession(token), expiresAtMs: { $gt: Date.now() } });
+        if (!session) return res.status(401).json({ error: 'Authentication required.', code: 'auth/session-expired' });
+        req.authUid = session.uid;
+        req.authUser = await db.collection('users').findOne({ $or: [{ uid: req.authUid }, { firebaseUid: req.authUid }] });
+        if (!req.authUser) return res.status(401).json({ error: 'Account not found.', code: 'auth/account-not-found' });
         next();
     } catch {
         res.status(401).json({ error: 'Authentication required.' });
@@ -55,7 +57,7 @@ async function auth(req, res, next) {
 }
 
 async function currentUser(req) {
-    return db.collection('users').findOne({ firebaseUid: req.authUid });
+    return req.authUser || db.collection('users').findOne({ $or: [{ uid: req.authUid }, { firebaseUid: req.authUid }] });
 }
 
 async function admin(req, res, next) {
@@ -112,42 +114,72 @@ app.get('/api/auth/me', async (req, res) => {
     const header = req.get('authorization') || '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
     if (!token) return res.json({ user: null });
-    try {
-        const firebaseUser = await firebaseAdmin.auth().verifyIdToken(token);
-        const user = await db.collection('users').findOne({ firebaseUid: firebaseUser.uid });
-        res.json({ user: user ? publicUser(user) : { uid: firebaseUser.uid, name: firebaseUser.name || '', email: firebaseUser.email || '', isAdmin: false } });
-    } catch {
-        res.json({ user: null });
-    }
+    const session = await db.collection('sessions').findOne({ tokenHash: hashSession(token), expiresAtMs: { $gt: Date.now() } });
+    const user = session ? await db.collection('users').findOne({ $or: [{ uid: session.uid }, { firebaseUid: session.uid }] }) : null;
+    res.json({ user: user ? publicUser(user) : null });
 });
 
 app.post('/api/auth/login', async (req, res) => {
     const email = String(req.body.email || '').trim().toLowerCase();
     const password = String(req.body.password || '');
     const user = await db.collection('users').findOne({ email });
-    if (!user?.passwordHash) return res.status(409).json({ code: 'auth/firebase-fallback-required' });
+    if (!user) return res.status(401).json({ code: 'auth/user-not-found', error: 'No account was found for this email address.' });
+    if (!user.passwordHash) return res.status(401).json({ code: 'auth/password-reset-required', error: 'This account needs a password reset before it can be used.' });
     if (!(await bcrypt.compare(password, user.passwordHash))) return res.status(401).json({ code: 'auth/invalid-credential' });
-    const customToken = await firebaseAdmin.auth().createCustomToken(user.firebaseUid);
-    res.json({ user: publicUser(user), customToken });
+    const token = await createSession(user);
+    res.json({ user: publicUser(user), token });
 });
 
-app.post('/api/auth/migrate-password', auth, async (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
+    const name = String(req.body.name || '').trim();
+    const email = String(req.body.email || '').trim().toLowerCase();
     const password = String(req.body.password || '');
+    if (!name) return res.status(400).json({ code: 'auth/missing-name', error: 'Full name is required.' });
+    if (!email || !email.includes('@')) return res.status(400).json({ code: 'auth/invalid-email', error: 'A valid email address is required.' });
     if (password.length < 6) return res.status(400).json({ code: 'auth/weak-password' });
-    const passwordHash = await bcrypt.hash(password, 12);
-    await db.collection('users').updateOne(
-        { firebaseUid: req.authUid },
-        { $set: { passwordHash, authProvider: 'mongodb', passwordMigratedAtMs: Date.now(), email: req.firebaseUser.email || '' }, $setOnInsert: { firebaseUid: req.authUid, isAdmin: false, createdAtMs: Date.now() } },
-        { upsert: true }
-    );
+    if (await db.collection('users').findOne({ email })) return res.status(409).json({ code: 'auth/email-already-in-use', error: 'An account already exists for this email.' });
+    const user = { uid: newId('usr'), name, email, passwordHash: await bcrypt.hash(password, 12), authProvider: 'mongodb', isAdmin: false, createdAtMs: Date.now() };
+    await db.collection('users').insertOne(user);
+    res.status(201).json({ user: publicUser(user) });
+});
+
+app.post('/api/auth/logout', auth, async (req, res) => {
+    const token = (req.get('authorization') || '').slice(7);
+    await db.collection('sessions').deleteOne({ tokenHash: hashSession(token) });
     res.json({ ok: true });
 });
 
-app.post('/api/auth/forgot-password', (req, res) => res.json({ ok: true }));
+app.post('/api/auth/forgot-password', async (req, res) => {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const user = await db.collection('users').findOne({ email });
+    if (user) {
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        await db.collection('passwordResets').insertOne({ tokenHash: hashSession(rawToken), uid: user.uid || user.firebaseUid, expiresAtMs: Date.now() + 1000 * 60 * 30, used: false });
+        const resetUrl = `${process.env.PUBLIC_APP_URL || ''}/#/reset-password?token=${rawToken}`;
+        if (mailer && process.env.RESET_FROM_EMAIL) {
+            await mailer.sendMail({ from: process.env.RESET_FROM_EMAIL, to: email, subject: 'Reset your RK CONNEKT password', text: `Use this link within 30 minutes to choose a new password: ${resetUrl}`, html: `<p>Use this link within 30 minutes to choose a new password:</p><p><a href="${resetUrl}">${resetUrl}</a></p>` });
+        } else {
+            console.warn(`SMTP is not configured. Password reset link for ${email}: ${resetUrl}`);
+        }
+    }
+    res.json({ ok: true, message: 'If an account exists for this email, a password reset link has been created.' });
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+    const token = String(req.body.token || '');
+    const password = String(req.body.password || '');
+    if (password.length < 6) return res.status(400).json({ code: 'auth/weak-password', error: 'Password must be at least 6 characters.' });
+    const reset = await db.collection('passwordResets').findOne({ tokenHash: hashSession(token), expiresAtMs: { $gt: Date.now() }, used: false });
+    if (!reset) return res.status(400).json({ code: 'auth/invalid-reset-token', error: 'This reset link is invalid or has expired. Request a new one.' });
+    await db.collection('users').updateOne({ $or: [{ uid: reset.uid }, { firebaseUid: reset.uid }] }, { $set: { passwordHash: await bcrypt.hash(password, 12), authProvider: 'mongodb', passwordUpdatedAtMs: Date.now() } });
+    await db.collection('passwordResets').updateOne({ _id: reset._id }, { $set: { used: true, usedAtMs: Date.now() } });
+    await db.collection('sessions').deleteMany({ uid: reset.uid });
+    res.json({ ok: true });
+});
 
 app.patch('/api/profile', auth, async (req, res) => {
     const name = String(req.body.name || '').trim();
-    await db.collection('users').updateOne({ firebaseUid: req.authUid }, { $set: { name }, $setOnInsert: { firebaseUid: req.authUid, email: req.firebaseUser.email || '', isAdmin: false, createdAtMs: Date.now() } }, { upsert: true });
+    await db.collection('users').updateOne({ $or: [{ uid: req.authUid }, { firebaseUid: req.authUid }] }, { $set: { name } });
     const user = await currentUser(req);
     res.json({ user: publicUser(user) });
 });
@@ -184,10 +216,10 @@ app.put('/api/admin/categories', auth, admin, async (req, res) => {
 
 app.get('/api/users/me', auth, async (req, res) => {
     const user = await currentUser(req);
-    res.json({ user: user ? publicUser(user) : { uid: req.authUid, name: req.firebaseUser.name || '', email: req.firebaseUser.email || '', isAdmin: false } });
+    res.json({ user: user ? publicUser(user) : null });
 });
 app.patch('/api/users/me', auth, async (req, res) => {
-    await db.collection('users').updateOne({ firebaseUid: req.authUid }, { $set: { name: String(req.body.name || '').trim(), email: req.firebaseUser.email || '' }, $setOnInsert: { firebaseUid: req.authUid, isAdmin: false, createdAtMs: Date.now() } }, { upsert: true });
+    await db.collection('users').updateOne({ $or: [{ uid: req.authUid }, { firebaseUid: req.authUid }] }, { $set: { name: String(req.body.name || '').trim() } });
     res.json({ ok: true });
 });
 
@@ -199,14 +231,14 @@ app.get('/api/orders', auth, async (req, res) => {
 });
 app.put('/api/orders/:id', auth, async (req, res) => {
     const user = await currentUser(req);
-    const filter = user?.isAdmin ? { id: req.params.id } : { id: req.params.id, uid: req.authId.toString() };
+    const filter = user?.isAdmin ? { id: req.params.id } : { id: req.params.id, uid: req.authUid };
     const existing = await db.collection('orders').findOne(filter);
     if (!existing) return res.status(404).json({ error: 'Order not found.' });
     await db.collection('orders').updateOne(filter, { $set: req.body });
     res.json({ ok: true });
 });
 app.post('/api/orders', auth, async (req, res) => {
-    const user = (await currentUser(req)) || { name: req.firebaseUser.name || '', email: req.firebaseUser.email || '' };
+    const user = (await currentUser(req)) || { name: '', email: '' };
     const items = Array.isArray(req.body.items) ? req.body.items : [];
     const products = await db.collection('products').find({ id: { $in: items.map(item => Number(item.id)) } }).toArray();
     const byId = new Map(products.map(product => [Number(product.id), product]));
@@ -244,50 +276,14 @@ async function start() {
     requireConfig();
     await client.connect();
     db = client.db(dbName);
-    await db.collection('users').createIndex({ firebaseUid: 1 }, { unique: true });
+    await db.collection('users').updateMany({ firebaseUid: { $exists: true }, uid: { $exists: false } }, [{ $set: { uid: '$firebaseUid', authProvider: 'mongodb-reset-required' } }]);
+    await db.collection('users').createIndex({ uid: 1 }, { unique: true, sparse: true });
+    await db.collection('users').createIndex({ email: 1 }, { unique: true, sparse: true });
+    await db.collection('sessions').createIndex({ expiresAtMs: 1 }, { expireAfterSeconds: 0 });
+    await db.collection('passwordResets').createIndex({ expiresAtMs: 1 }, { expireAfterSeconds: 0 });
     await db.collection('products').createIndex({ id: 1 }, { unique: true });
     await db.collection('orders').createIndex({ id: 1, uid: 1 }, { unique: true });
-    await migrateFromFirestore();
     app.listen(port, '0.0.0.0', () => console.log(`RK CONNEKT listening on ${port}`));
-}
-
-async function migrateFromFirestore() {
-    if (process.env.MIGRATE_FROM_FIRESTORE !== 'true') return;
-    const existingProducts = await db.collection('products').countDocuments();
-    if (existingProducts > 0) {
-        console.log('MongoDB already contains products; skipping Firebase migration.');
-        return;
-    }
-    const firestore = firebaseAdmin.firestore();
-    const [products, categories, users, orders, messages] = await Promise.all([
-        firestore.collection('products').get(),
-        firestore.doc('meta/categories').get(),
-        firestore.collection('users').get(),
-        firestore.collection('orders').get(),
-        firestore.collection('messages').get()
-    ]);
-    if (!products.empty) {
-        await db.collection('products').insertMany(products.docs.map(doc => ({ ...doc.data(), id: Number(doc.data().id || doc.id) })), { ordered: false });
-    }
-    if (categories.exists) {
-        const data = categories.data() || {};
-        const variantCategories = data.variantCategories || [];
-        await db.collection('meta').updateOne({ key: 'categories' }, { $set: { key: 'categories', list: data.list || [], sizeCategories: data.sizeCategories || variantCategories, colorCategories: data.colorCategories || variantCategories } }, { upsert: true });
-    }
-    if (!users.empty) {
-        await Promise.all(users.docs.map(doc => {
-            const data = doc.data() || {};
-            return db.collection('users').updateOne({ firebaseUid: doc.id }, { $set: { ...data, firebaseUid: doc.id, email: data.email || '' } }, { upsert: true });
-        }));
-    }
-    for (const [collection, snapshot] of [['orders', orders], ['messages', messages]]) {
-        await Promise.all(snapshot.docs.map(doc => {
-            const data = doc.data() || {};
-            const id = String(data.id || doc.id);
-            return db.collection(collection).updateOne({ id }, { $set: { ...data, id } }, { upsert: true });
-        }));
-    }
-    console.log(`Firebase migration complete: ${products.size} products, ${users.size} users, ${orders.size} orders, ${messages.size} messages.`);
 }
 
 start().catch(error => { console.error(error); process.exit(1); });

@@ -2,23 +2,11 @@
 // Products, categories, accounts and orders live behind the API.
 // The shopping cart stays in this browser's localStorage, as before.
 
-const firebaseConfig = {
-    apiKey: "AIzaSyCHAemBi71qB9diMJ9--_IlnCt2mzcC3V4",
-    authDomain: "rk-main-c7124.firebaseapp.com",
-    projectId: "rk-main-c7124",
-    storageBucket: "rk-main-c7124.firebasestorage.app",
-    messagingSenderId: "31301974162",
-    appId: "1:31301974162:web:c5ef6cd84e3e7ff2928e4b"
-};
-
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
 const API_BASE = window.RK_API_BASE || '';
-
+let sessionToken = sessionStorage.getItem('rk_session_token') || '';
 async function apiRequest(path, options = {}) {
     const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
-    const user = auth.currentUser;
-    if (user) headers.Authorization = `Bearer ${await user.getIdToken()}`;
+    if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
     const response = await fetch(`${API_BASE}/api${path}`, { ...options, headers });
     let body = {};
     try { body = await response.json(); } catch (error) { /* non-JSON response */ }
@@ -202,7 +190,7 @@ const categoriesListener = listen(db.doc('meta/categories'), snapshot => {
 });
 
 // ---------- Auth ----------
-async function syncUser(fbUser) {
+async function syncUser(user) {
     const token = ++syncCounter;
     stopOrdersListener();
     stopOrdersListener = () => {};
@@ -210,39 +198,22 @@ async function syncUser(fbUser) {
     store.myOrders = [];
     store.messages = [];
 
-    if (!fbUser) {
+    if (!user) {
         store.user = null;
         return;
-    }
-
-    let profile = {};
-    try {
-        const snapshot = await db.collection('users').doc(fbUser.uid).get();
-        if (snapshot.exists) {
-            profile = snapshot.data();
-        } else {
-            profile = {
-                name: fbUser.displayName || (fbUser.email || '').split('@')[0],
-                email: fbUser.email || '',
-                isAdmin: false
-            };
-            db.collection('users').doc(fbUser.uid).set(profile).catch(error => console.error('Profile create failed:', error));
-        }
-    } catch (error) {
-        console.error('Could not load the account profile:', error);
     }
     if (token !== syncCounter) return;
 
     store.user = {
-        uid: fbUser.uid,
-        name: profile.name || '',
-        email: profile.email || fbUser.email || '',
-        isAdmin: profile.isAdmin === true
+        uid: user.uid,
+        name: user.name || '',
+        email: user.email || '',
+        isAdmin: user.isAdmin === true
     };
 
     const query = store.user.isAdmin
         ? db.collection('orders').orderBy('createdAtMs')
-        : db.collection('orders').where('uid', '==', fbUser.uid);
+        : db.collection('orders').where('uid', '==', user.uid);
     const ordersListener = listen(query, snapshot => {
         const orders = snapshot.docs.map(doc => doc.data()).sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0));
         if (store.user?.isAdmin) store.allOrders = orders;
@@ -261,14 +232,15 @@ async function syncUser(fbUser) {
     if (messagesListener) await messagesListener.ready;
 }
 
-const authReady = new Promise(resolve => {
-    auth.onAuthStateChanged(async fbUser => {
-        if (registering) return; // handleRegister signs the new account out itself
-        await syncUser(fbUser);
-        authSettled = true;
-        resolve();
-        if (appReady && typeof renderPage === 'function') renderPage();
-    });
+const authReady = apiRequest('/auth/me').then(async body => {
+    await syncUser(body.user);
+    authSettled = true;
+    if (appReady && typeof renderPage === 'function') renderPage();
+}).catch(async () => {
+    sessionToken = '';
+    sessionStorage.removeItem('rk_session_token');
+    await syncUser(null);
+    authSettled = true;
 });
 
 // The shop waits only for the product list, never for login, so visitors who are not
@@ -276,7 +248,7 @@ const authReady = new Promise(resolve => {
 const dataReady = Promise.race([
     Promise.all([productsListener.ready, categoriesListener.ready]),
     new Promise(resolve => setTimeout(() => {
-        console.warn('Firebase is slow to respond; showing the shop with what has loaded.');
+        console.warn('The API is slow to respond; showing the shop with what has loaded.');
         resolve();
     }, 10000))
 ]);
@@ -298,7 +270,10 @@ function logout() {
     store.messages = [];
     stopOrdersListener();
     stopOrdersListener = () => {};
-    auth.signOut().catch(error => console.error('Sign out failed:', error));
+    const token = sessionToken;
+    sessionToken = '';
+    sessionStorage.removeItem('rk_session_token');
+    if (token) apiRequest('/auth/logout', { method: 'POST' }).catch(error => console.error('Sign out failed:', error));
     window.location.hash = '#/home';
 }
 
@@ -983,11 +958,11 @@ function renderPage() {
         return;
     }
     // Someone who is already logged in has no use for the login / register forms.
-    if (user && ['login', 'register', 'forgot-password'].includes(page)) {
+    if (user && ['login', 'register', 'forgot-password', 'reset-password'].includes(page)) {
         location.hash = postLoginHash(user);
         return;
     }
-    if (!['login', 'register', 'forgot-password'].includes(page)) {
+    if (!['login', 'register', 'forgot-password', 'reset-password'].includes(page)) {
         afterLoginHash = '';
         loginNotice = '';
     }
@@ -999,7 +974,7 @@ function renderPage() {
     const pages = {
         home: renderHome, search: renderSearch, product: renderProduct,
         login: showLoginPage, register: () => showTemplate('tpl-register'),
-        'forgot-password': () => showTemplate('tpl-forgot-password'), cart: renderCart,
+        'forgot-password': () => showTemplate('tpl-forgot-password'), 'reset-password': () => showTemplate('tpl-reset-password'), cart: renderCart,
         checkout: renderCheckout, success: renderOrderSuccess, about: () => showTemplate('tpl-about'),
         contact: () => showTemplate('tpl-contact'), faq: () => showTemplate('tpl-faq'), legal: renderLegal,
         dashboard: () => renderDashboard(), admin: () => renderAdmin()
@@ -1131,6 +1106,8 @@ function authErrorMessage(error, action = 'login') {
             return 'Login failed: the email and password combination is incorrect. Check both fields, or use Forgot Password to reset it.';
         case 'auth/user-not-found':
             return 'No account was found for this email address. Check the email or choose Register to create an account.';
+        case 'auth/password-reset-required':
+            return 'This account needs a new password before it can be used. Choose Forgot Password to create a reset link.';
         case 'auth/user-disabled':
             return 'This account has been disabled. Please contact support for help.';
         case 'auth/invalid-email':
@@ -1144,6 +1121,8 @@ function authErrorMessage(error, action = 'login') {
             return 'Too many sign-in attempts. Please wait a few minutes before trying again.';
         case 'auth/network-request-failed':
             return `${action === 'register' ? 'Registration' : 'Login'} could not connect to the server. Check your internet connection and try again.`;
+        case 'auth/invalid-reset-token':
+            return 'This password reset link is invalid or has expired. Request a new reset link.';
         case 'auth/operation-not-allowed':
             return 'This sign-in method is not enabled yet. Please contact support.';
         case 'auth/missing-password':
@@ -1192,16 +1171,11 @@ async function handleLogin(event) {
         return;
     }
     try {
-        let credential;
-        try {
-            const mongoLogin = await apiRequest('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-            credential = await auth.signInWithCustomToken(mongoLogin.customToken);
-        } catch (mongoError) {
-            if (!['auth/firebase-fallback-required', 'auth/invalid-credential'].includes(mongoError.code)) throw mongoError;
-            credential = await auth.signInWithEmailAndPassword(email, password);
-            await apiRequest('/auth/migrate-password', { method: 'POST', body: JSON.stringify({ password }) });
-        }
-        const user = await waitForUser(credential.user.uid);
+        const result = await apiRequest('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+        sessionToken = result.token;
+        sessionStorage.setItem('rk_session_token', sessionToken);
+        await syncUser(result.user);
+        const user = result.user;
         alert(`Welcome back${user?.name ? `, ${user.name}` : ''}! You are now signed in.`);
         location.hash = postLoginHash(user);
     } catch (error) {
@@ -1228,10 +1202,7 @@ async function handleRegister(event) {
     }
     registering = true;
     try {
-        const credential = await auth.createUserWithEmailAndPassword(email, password);
-        await db.collection('users').doc(credential.user.uid).set({ name, email, isAdmin: false });
-        await apiRequest('/auth/migrate-password', { method: 'POST', body: JSON.stringify({ password }) });
-        await auth.signOut();
+        await apiRequest('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) });
         alert(`Account created successfully${name ? ` for ${name}` : ''}! Please log in with your new account.`);
         location.hash = '#/login';
     } catch (error) {
@@ -1246,18 +1217,33 @@ async function handlePasswordReset(event) {
     event.preventDefault();
     const email = document.getElementById('reset-email').value.trim();
     try {
-        await auth.sendPasswordResetEmail(email);
+        const result = await apiRequest('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+        alert(result.message || 'If an account exists for this email, a password reset link has been created.');
+        location.hash = '#/login';
+        return;
     } catch (error) {
         console.error(error);
-        if (error.code === 'auth/network-request-failed') {
-            alert(authErrorMessage(error, 'reset'));
-            return;
-        }
+        alert(authErrorMessage(error, 'reset'));
     }
-    alert('If an account exists for this email, a reset link has been sent.');
-    location.hash = '#/login';
 }
-
+async function handleCompletePasswordReset(event) {
+    event.preventDefault();
+    const token = routeInfo().params.get('token') || '';
+    const password = document.getElementById('new-password').value;
+    const confirmation = document.getElementById('confirm-password').value;
+    if (password !== confirmation) {
+        alert('Password reset failed: the passwords do not match.');
+        return;
+    }
+    try {
+        await apiRequest('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) });
+        alert('Your password has been updated. You can now log in.');
+        location.hash = '#/login';
+    } catch (error) {
+        console.error(error);
+        alert(authErrorMessage(error, 'reset'));
+    }
+}
 let processingOrder = false;
 
 async function processOrder() {

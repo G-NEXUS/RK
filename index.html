@@ -143,6 +143,19 @@
             <p class="text-center mt-20"><a class="text-accent" href="#/login">Back to Login</a></p>
         </div></section>
     </template>
+    <template id="tpl-reset-password">
+        <section class="auth-stage"><div class="form-container auth-form">
+            <button class="auth-close" type="button" aria-label="Close form" onclick="location.hash = '#/home'">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+            </button><h1 class="text-center mb-20">Choose a New Password</h1>
+            <form onsubmit="handleCompletePasswordReset(event)">
+                <div class="form-group"><label for="new-password">New Password</label><input type="password" id="new-password" minlength="6" required autocomplete="new-password"></div>
+                <div class="form-group"><label for="confirm-password">Confirm New Password</label><input type="password" id="confirm-password" minlength="6" required autocomplete="new-password"></div>
+                <button type="submit" class="btn btn-full">Update Password</button>
+            </form>
+            <p class="text-center mt-20"><a class="text-accent" href="#/login">Back to Login</a></p>
+        </div></section>
+    </template>
 
     <template id="tpl-about">
         <article class="content-page"><h1 class="section-title">About RK CONNEKT</h1>
@@ -193,8 +206,6 @@
     </form></div></div>
     </template>
 
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
     <script src="common.js?v=9"></script>
 </body>
 </html>
