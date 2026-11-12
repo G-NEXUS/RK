@@ -88,8 +88,8 @@
         <section class="auth-stage"><div class="form-container auth-form">
             <button class="auth-close" type="button" aria-label="Close form" onclick="location.hash = '#/home'">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
-            </button><h1 class="text-center mb-20">Welcome Back</h1>
-            <p id="login-notice" class="text-center mb-20 text-accent" role="status" hidden></p>
+            </button><div class="auth-heading"><span class="auth-accent-bar" aria-hidden="true"></span><h1 class="text-center mb-20">Welcome Back</h1></div>
+            <p id="login-notice" class="auth-message text-center mb-20 text-accent" role="status" aria-live="polite" hidden></p>
             <form onsubmit="handleLogin(event)">
                 <div class="form-group"><label for="login-email">Email Address</label><input type="email" id="login-email" autocomplete="email" required></div>
                 <div class="form-group">
@@ -113,7 +113,8 @@
         <section class="auth-stage"><div class="form-container auth-form">
             <button class="auth-close" type="button" aria-label="Close form" onclick="location.hash = '#/home'">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
-            </button><h1 class="text-center mb-20">Create Account</h1>
+            </button><div class="auth-heading"><span class="auth-accent-bar" aria-hidden="true"></span><h1 class="text-center mb-20">Create Account</h1></div>
+            <p id="register-notice" class="auth-message text-center mb-20" role="status" aria-live="polite" hidden></p>
             <form onsubmit="handleRegister(event)">
                 <div class="form-group"><label for="reg-name">Full Name</label><input type="text" id="reg-name" autocomplete="name" required></div>
                 <div class="form-group"><label for="reg-email">Email Address</label><input type="email" id="reg-email" autocomplete="email" required></div>
@@ -206,6 +207,6 @@
     </form></div></div>
     </template>
 
-    <script src="common.js?v=9"></script>
+    <script src="common.js?v=10"></script>
 </body>
 </html>

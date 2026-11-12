@@ -441,14 +441,21 @@ footer {
     position: relative;
     width: min(500px, 100%);
     max-height: 100%;
-    padding: 36px;
+    padding: 32px 28px 26px;
     margin: 0 auto;
     overflow-y: auto;
     background: rgba(27, 26, 23, .62);
-    border-color: rgba(255, 138, 36, .44);
-    box-shadow: 0 24px 70px rgba(0, 0, 0, .32);
+    border-color: rgba(255, 138, 36, .58);
+    border-radius: 14px;
+    box-shadow: 0 8px 36px rgba(0, 0, 0, .62);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
+    animation: authPopIn .22s ease;
+}
+
+@keyframes authPopIn {
+    from { opacity: 0; transform: scale(.94); }
+    to { opacity: 1; transform: scale(1); }
 }
 
 .auth-close {
@@ -482,6 +489,53 @@ footer {
     stroke-width: 2;
 }
 
+.auth-heading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.auth-accent-bar {
+    width: 4px;
+    height: 28px;
+    flex: 0 0 4px;
+    border-radius: 4px;
+    background: var(--accent-orange);
+    box-shadow: 0 0 10px rgba(255, 138, 36, .58);
+}
+
+.auth-heading h1 {
+    margin-bottom: 0;
+    font-size: 1.3rem;
+    text-align: left;
+}
+
+.auth-message {
+    display: block;
+    padding: 9px 12px;
+    margin-bottom: 16px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    font-size: .88rem;
+}
+
+.auth-message[hidden] {
+    display: none;
+}
+
+.auth-message.is-error {
+    color: #ffc0ad;
+    background: rgba(106, 28, 18, .62);
+    border-color: rgba(255, 133, 101, .48);
+}
+
+.auth-message.is-success {
+    color: #d7f5bd;
+    background: rgba(45, 83, 29, .62);
+    border-color: rgba(154, 220, 105, .44);
+}
+
 .auth-form > h1 {
     padding-right: 28px;
 }
@@ -493,6 +547,10 @@ footer {
 .form-group label {
     display: block;
     margin-bottom: 8px;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
 }
 
 .form-group input,
@@ -504,7 +562,8 @@ footer {
     color: white;
     background: #11100e;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 8px;
+    transition: border-color .2s ease, box-shadow .2s ease;
 }
 
 .form-group input:focus,
@@ -512,6 +571,7 @@ footer {
 .form-group select:focus {
     outline: none;
     border-color: var(--accent-orange);
+    box-shadow: 0 0 0 3px rgba(255, 138, 36, .15);
 }
 
 .password-field {

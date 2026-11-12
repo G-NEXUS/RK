@@ -1160,16 +1160,28 @@ function showLoginPage() {
     }
 }
 
+function showAuthMessage(message, type = 'error', target = 'register-notice') {
+    const notice = document.getElementById(target);
+    if (!notice) {
+        alert(message);
+        return;
+    }
+    notice.textContent = message;
+    notice.classList.remove('is-error', 'is-success');
+    notice.classList.add(type === 'success' ? 'is-success' : 'is-error');
+    notice.hidden = false;
+}
+
 async function handleLogin(event) {
     event.preventDefault();
     const email = document.getElementById('login-email').value.trim().toLowerCase();
     const password = document.getElementById('login-password').value;
     if (!email) {
-        alert('Login failed: please enter your email address.');
+        showAuthMessage('Login failed: please enter your email address.', 'error', 'login-notice');
         return;
     }
     if (!password) {
-        alert('Login failed: please enter your password.');
+        showAuthMessage('Login failed: please enter your password.', 'error', 'login-notice');
         return;
     }
     try {
@@ -1178,11 +1190,11 @@ async function handleLogin(event) {
         sessionStorage.setItem('rk_session_token', sessionToken);
         await syncUser(result.user);
         const user = result.user;
-        alert(`Welcome back${user?.name ? `, ${user.name}` : ''}! You are now signed in.`);
-        location.hash = postLoginHash(user);
+        showAuthMessage(`Welcome back${user?.name ? `, ${user.name}` : ''}! You are now signed in.`, 'success', 'login-notice');
+        setTimeout(() => { location.hash = postLoginHash(user); }, 700);
     } catch (error) {
         console.error(error);
-        alert(authErrorMessage(error, 'login'));
+        showAuthMessage(authErrorMessage(error, 'login'), 'error', 'login-notice');
     }
 }
 async function handleRegister(event) {
@@ -1191,25 +1203,25 @@ async function handleRegister(event) {
     const email = document.getElementById('reg-email').value.trim();
     const password = document.getElementById('reg-password').value;
     if (!name) {
-        alert('Registration failed: please enter your full name.');
+        showAuthMessage('Registration failed: please enter your full name.');
         return;
     }
     if (!email) {
-        alert('Registration failed: please enter your email address.');
+        showAuthMessage('Registration failed: please enter your email address.');
         return;
     }
     if (!password) {
-        alert('Registration failed: please create a password.');
+        showAuthMessage('Registration failed: please create a password.');
         return;
     }
     registering = true;
     try {
         await apiRequest('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) });
-        alert(`Account created successfully${name ? ` for ${name}` : ''}! Please log in with your new account.`);
-        location.hash = '#/login';
+        showAuthMessage(`Account created successfully${name ? ` for ${name}` : ''}! Please log in with your new account.`, 'success');
+        setTimeout(() => { location.hash = '#/login'; }, 1400);
     } catch (error) {
         console.error(error);
-        alert(authErrorMessage(error, 'register'));
+        showAuthMessage(authErrorMessage(error, 'register'));
     } finally {
         registering = false;
     }
