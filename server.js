@@ -35,6 +35,9 @@ function publicUser(user) {
 }
 function hashSession(token) { return crypto.createHash('sha256').update(token).digest('hex'); }
 function newId(prefix) { return `${prefix}_${crypto.randomBytes(12).toString('hex')}`; }
+function emailPattern(email) {
+    return new RegExp(`^${String(email).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+}
 async function createSession(user) {
     const token = crypto.randomBytes(32).toString('hex');
     await db.collection('sessions').insertOne({ tokenHash: hashSession(token), uid: user.uid || user.firebaseUid, createdAtMs: Date.now(), expiresAtMs: Date.now() + 1000 * 60 * 60 * 24 * 30 });
@@ -122,7 +125,7 @@ app.get('/api/auth/me', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
     const email = String(req.body.email || '').trim().toLowerCase();
     const password = String(req.body.password || '');
-    const user = await db.collection('users').findOne({ email });
+    const user = await db.collection('users').findOne({ email: emailPattern(email) });
     if (!user) return res.status(401).json({ code: 'auth/user-not-found', error: 'No account was found for this email address.' });
     if (!user.passwordHash) return res.status(401).json({ code: 'auth/password-reset-required', error: 'This account needs a password reset before it can be used.' });
     if (!(await bcrypt.compare(password, user.passwordHash))) return res.status(401).json({ code: 'auth/invalid-credential' });
@@ -139,7 +142,7 @@ app.post('/api/auth/register', async (req, res) => {
         if (!email || !email.includes('@')) return res.status(400).json({ code: 'auth/invalid-email', error: 'A valid email address is required.' });
         if (password.length < 6) return res.status(400).json({ code: 'auth/weak-password', error: 'Password must be at least 6 characters.' });
         if (!db) return res.status(503).json({ code: 'auth/database-unavailable', error: 'Registration is temporarily unavailable. Please try again shortly.' });
-        if (await db.collection('users').findOne({ email })) return res.status(409).json({ code: 'auth/email-already-in-use', error: 'An account already exists for this email.' });
+        if (await db.collection('users').findOne({ email: emailPattern(email) })) return res.status(409).json({ code: 'auth/email-already-in-use', error: 'An account already exists for this email.' });
         const user = { uid: newId('usr'), name, email, passwordHash: await bcrypt.hash(password, 12), authProvider: 'mongodb', isAdmin: false, createdAtMs: Date.now() };
         await db.collection('users').insertOne(user);
         res.status(201).json({ user: publicUser(user) });
