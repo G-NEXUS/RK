@@ -205,7 +205,12 @@ app.put('/api/admin/products/:id', auth, admin, async (req, res) => {
         const product = cleanProduct({ ...req.body, id }, existing || {});
         await db.collection('products').replaceOne({ id }, product, { upsert: true });
         res.json({ product });
-    } catch (error) { res.status(400).json({ error: error.message }); }
+    } catch (error) {
+        console.error('Product save failed:', error.message);
+        if (error?.code === 11000) return res.status(409).json({ code: 'product/duplicate-id', error: 'A product with this ID already exists. Please try saving again.' });
+        if (error?.code === 'BSONObjectTooLarge') return res.status(413).json({ code: 'product/too-large', error: 'The product photos are too large. Use fewer or smaller photos and try again.' });
+        res.status(error?.message === 'Product fields are invalid.' ? 400 : 503).json({ code: 'product/save-failed', error: error.message || 'The product could not be saved to the database.' });
+    }
 });
 app.delete('/api/admin/products/:id', auth, admin, async (req, res) => {
     await db.collection('products').deleteOne({ id: Number(req.params.id) });

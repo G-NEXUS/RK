@@ -1659,12 +1659,22 @@ async function saveNewProduct(event) {
             return;
         }
         if (Object.keys(built.options).length) product.options = built.options;
-        await db.collection('products').doc(String(product.id)).set(product);
+        const saved = await db.collection('products').doc(String(product.id)).set(product);
+        if (!saved?.product || Number(saved.product.id) !== Number(product.id)) {
+            throw new Error('The server did not confirm that the product was saved. Please try again.');
+        }
     } catch (error) {
         console.error(error);
-        alert(error.code
-            ? 'Product could not be saved. Check your connection and that you are signed in as an admin.'
-            : error.message);
+        const message = error.code === 'auth/session-expired'
+            ? 'Your admin session has expired. Please log in again, then save the product.'
+            : error.code === 'auth/account-not-found'
+                ? 'Your admin account could not be found. Please log in again.'
+                : error.code === 'product/too-large'
+                    ? 'The product photos are too large. Use fewer or smaller photos and try again.'
+                    : error.code === 'product/duplicate-id'
+                        ? 'A product with this ID already exists. Please try saving again.'
+                : error.message || 'Product could not be saved. Please check your connection and try again.';
+        alert(message);
         return;
     } finally {
         savingProduct = false;
