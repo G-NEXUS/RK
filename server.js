@@ -131,16 +131,23 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.post('/api/auth/register', async (req, res) => {
-    const name = String(req.body.name || '').trim();
-    const email = String(req.body.email || '').trim().toLowerCase();
-    const password = String(req.body.password || '');
-    if (!name) return res.status(400).json({ code: 'auth/missing-name', error: 'Full name is required.' });
-    if (!email || !email.includes('@')) return res.status(400).json({ code: 'auth/invalid-email', error: 'A valid email address is required.' });
-    if (password.length < 6) return res.status(400).json({ code: 'auth/weak-password' });
-    if (await db.collection('users').findOne({ email })) return res.status(409).json({ code: 'auth/email-already-in-use', error: 'An account already exists for this email.' });
-    const user = { uid: newId('usr'), name, email, passwordHash: await bcrypt.hash(password, 12), authProvider: 'mongodb', isAdmin: false, createdAtMs: Date.now() };
-    await db.collection('users').insertOne(user);
-    res.status(201).json({ user: publicUser(user) });
+    try {
+        const name = String(req.body.name || '').trim();
+        const email = String(req.body.email || '').trim().toLowerCase();
+        const password = String(req.body.password || '');
+        if (!name) return res.status(400).json({ code: 'auth/missing-name', error: 'Full name is required.' });
+        if (!email || !email.includes('@')) return res.status(400).json({ code: 'auth/invalid-email', error: 'A valid email address is required.' });
+        if (password.length < 6) return res.status(400).json({ code: 'auth/weak-password', error: 'Password must be at least 6 characters.' });
+        if (!db) return res.status(503).json({ code: 'auth/database-unavailable', error: 'Registration is temporarily unavailable. Please try again shortly.' });
+        if (await db.collection('users').findOne({ email })) return res.status(409).json({ code: 'auth/email-already-in-use', error: 'An account already exists for this email.' });
+        const user = { uid: newId('usr'), name, email, passwordHash: await bcrypt.hash(password, 12), authProvider: 'mongodb', isAdmin: false, createdAtMs: Date.now() };
+        await db.collection('users').insertOne(user);
+        res.status(201).json({ user: publicUser(user) });
+    } catch (error) {
+        console.error('Registration failed:', error.message);
+        if (error?.code === 11000) return res.status(409).json({ code: 'auth/email-already-in-use', error: 'An account already exists for this email.' });
+        res.status(503).json({ code: 'auth/database-unavailable', error: 'Registration is temporarily unavailable. Please try again shortly.' });
+    }
 });
 
 app.post('/api/auth/logout', auth, async (req, res) => {

@@ -1108,6 +1108,8 @@ function authErrorMessage(error, action = 'login') {
             return 'No account was found for this email address. Check the email or choose Register to create an account.';
         case 'auth/password-reset-required':
             return 'This account needs a new password before it can be used. Choose Forgot Password to create a reset link.';
+        case 'auth/database-unavailable':
+            return 'Registration is temporarily unavailable because the account database could not be reached. Please try again shortly.';
         case 'auth/user-disabled':
             return 'This account has been disabled. Please contact support for help.';
         case 'auth/invalid-email':
