@@ -944,9 +944,21 @@ async function deleteMessage(id) {
     renderAdmin('contacts');
 }
 
+function updateActiveNavigation(page) {
+    const activePage = ['search', 'product'].includes(page) ? 'home' : ['checkout', 'success'].includes(page) ? 'cart' : page;
+    document.querySelectorAll('#primary-navigation > a[href^="#/"]').forEach(link => {
+        const linkPage = link.getAttribute('href').slice(2).split('?')[0] || 'home';
+        const active = linkPage === activePage && ['home', 'about', 'contact', 'cart'].includes(linkPage);
+        link.classList.toggle('is-active', active);
+        if (active) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+    });
+}
+
 function renderPage() {
     const { page } = routeInfo();
     toggleMenu(true);
+    updateActiveNavigation(page);
     document.title = `${page === 'home' ? 'Shop' : page.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase())} | ${brand}`;
     const user = getCurrentUser();
     document.getElementById('auth-links').innerHTML = user

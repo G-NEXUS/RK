@@ -131,6 +131,21 @@ nav .container {
     color: var(--accent-orange);
 }
 
+.nav-links > a.is-active:not(.cart-icon) {
+    color: var(--accent-orange);
+    font-weight: 700;
+    text-shadow: 0 0 12px rgba(255, 138, 36, .28);
+}
+
+.nav-links > a.is-active:not(.cart-icon)::after {
+    display: block;
+    height: 2px;
+    margin-top: 4px;
+    content: '';
+    background: var(--accent-orange);
+    border-radius: 2px;
+}
+
 .cart-icon {
     padding: 6px 14px;
     color: #17120d;
@@ -1371,6 +1386,10 @@ input:disabled {
         display: block;
         padding: 10px 12px;
         border-radius: 6px;
+    }
+
+    .nav-links > a.is-active:not(.cart-icon) {
+        background: rgba(255, 138, 36, .12);
     }
 
     #auth-links {
